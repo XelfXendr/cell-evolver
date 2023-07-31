@@ -29,14 +29,14 @@ pub fn physics_update(
     let dt = FIXED_DELTA;
     for (mut body, mut transform) in body_query.iter_mut() {
         let acc = body.acceleration * dt;
-        let multiplier = (1. - body.drag/60.).powf(60.*dt);
+        let multiplier = 1. - body.drag/60.;
         body.velocity += acc/2.;
         body.velocity *= multiplier;
         transform.translation += Vec3::from((body.velocity * dt, 0.));
         body.velocity += acc/2.;
 
         let ang_acc = body.angular_acceleration * dt;
-        let multiplier = (1. - body.angular_drag/60.).powf(60.*dt);
+        let multiplier = 1. - body.angular_drag/60.;
         body.angular_velocity += ang_acc/2.;
         body.angular_velocity *= multiplier;
         transform.rotate_local_z(body.angular_velocity * dt);

@@ -3,28 +3,21 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use bevy::ecs::query::BatchingStrategy;
-use bevy::{prelude::*, sprite::Anchor};
+use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use ndarray::s;
 use rand_distr::{Normal, Distribution};
-use rand::{self, Rng};
+use rand;
 use ndarray::{Array1, Array2};
-use ndarray_rand::{RandomExt, rand_distr::Normal as ndNormal};
+use ndarray_rand::RandomExt;
 
-use crate::sprite_animation::*;
 use crate::physics::*;
 
 pub const PLAYER_SPEED: f32 = 500.;
 pub const PLAYER_ANGLE_SPEED: f32 = 7.;
 
-pub const CELL_GROUP: Group = Group::from_bits_truncate(0b0001);
-pub const EYE_GROUP: Group  = Group::from_bits_truncate(0b0010);
-pub const FOOD_GROUP: Group = Group::from_bits_truncate(0b0100);
-
 pub const SPLIT_ENERGY: f32 = 200.;
 pub const MIN_ENERGY: f32 = 70.;
-
-pub const COLLISION_FLAGS: ActiveCollisionTypes = ActiveCollisionTypes::STATIC_STATIC;
 
 pub const FIXED_DELTA: f32 = 1./60.;
 
@@ -32,10 +25,10 @@ pub struct CellPlugin;
 impl Plugin for CellPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<CellSprite>()
-            .init_resource::<EyeSprite>()
-            .init_resource::<FlagellumSprite>()
-            .init_resource::<FoodSprites>()
+            .add_event::<CellSpawnEvent>()
+            .add_event::<FlagellumSpawnEvent>()
+            .add_event::<EyeSpawnEvent>()
+            .add_event::<FoodSpawnEvent>()
             .add_systems(Startup, (
                 cell_setup,
             ))
@@ -53,50 +46,6 @@ impl Plugin for CellPlugin {
                 split_cells,
                 fixed_thing
             ));  
-    }
-}
-
-#[derive(Resource)]
-pub struct CellSprite(Handle<Image>);
-impl FromWorld for CellSprite {
-    fn from_world(world: &mut World) -> Self {
-        CellSprite(
-            world.resource::<AssetServer>().load("sprites/cell_parts/cell.png")
-        )
-    }
-}
-
-#[derive(Resource)]
-pub struct EyeSprite(Handle<TextureAtlas>);
-impl FromWorld for EyeSprite {
-    fn from_world(world: &mut World) -> Self {
-        EyeSprite({
-            let eye_texture: Handle<Image> = world.resource::<AssetServer>().load("sprites/cell_parts/eye.png");
-            let eye_atlas = TextureAtlas::from_grid(eye_texture, Vec2::new(32.,32.), 8, 1, None, None);
-            world.resource_mut::<Assets<TextureAtlas>>().add(eye_atlas)
-        })
-    }
-}
-#[derive(Resource)]
-pub struct FlagellumSprite(Handle<TextureAtlas>);
-impl FromWorld for FlagellumSprite {
-    fn from_world(world: &mut World) -> Self {
-        FlagellumSprite({
-            let flagellum_texture: Handle<Image> = world.resource::<AssetServer>().load("sprites/cell_parts/flagella.png");
-            let flagellum_atlas = TextureAtlas::from_grid(flagellum_texture, Vec2::new(88.,110.), 8, 1, None, None);
-            world.resource_mut::<Assets<TextureAtlas>>().add(flagellum_atlas)
-        })
-    }
-}
-
-#[derive(Resource)]
-pub struct FoodSprites(Vec<Handle<Image>>);
-impl FromWorld for FoodSprites {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        FoodSprites(
-            (1..14).map(|n| asset_server.load(format!("sprites/food/{:0>2}.png", n))).collect()
-        )
     }
 }
 
@@ -127,40 +76,51 @@ pub struct Eye {
 pub struct Food {
 }
 
-#[derive(Component)]
+#[derive(Component, Deref, DerefMut)]
 pub struct ThinkingTimer(Timer);
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct FoodTimer(Timer);
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct DebugTimer(Timer);
 
 #[derive(Resource)]
 pub struct TimeCounter(f32, f32);
 
+#[derive(Event, Deref, DerefMut)]
+pub struct CellSpawnEvent(Entity);
+
+#[derive(Event, Deref, DerefMut)]
+pub struct FlagellumSpawnEvent(Entity);
+
+#[derive(Event, Deref, DerefMut)]
+pub struct EyeSpawnEvent(Entity);
+
+#[derive(Event, Deref, DerefMut)]
+pub struct FoodSpawnEvent(Entity);
+
 pub fn cell_setup(
     mut commands: Commands, 
-    cell_image: Res<CellSprite>,
-    eye_image: Res<EyeSprite>,
-    flagellum_image: Res<FlagellumSprite>,
-    food_image: Res<FoodSprites>,
+    mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
+    mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
+    mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
+    mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
 ) {
     commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
     commands.insert_resource(DebugTimer(Timer::new(Duration::from_secs_f32(1.), TimerMode::Repeating)));
+    commands.insert_resource(TimeCounter(0., 0.));
 
     let normal = Normal::new(0., 10000.).unwrap();
     let mut rng = rand::thread_rng();
-
+    
     for _ in 0..20 {
         spawn_cell(
             &mut commands,
+            &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng),0.),
             Quat::from_rotation_z(0.),
             100.,
-            &cell_image,
-            &eye_image,
-            &flagellum_image,
             vec![(PI/2., -PI/4.), (0., 0.), (-PI/2.,  PI/4.)],
             vec![PI*5.2/6., PI, PI*6.8/6.],
             Array2::random((100,100), Normal::new(0., 0.5).unwrap()),
@@ -172,7 +132,7 @@ pub fn cell_setup(
     for _ in 0..10000 {
         spawn_food(
             &mut commands, 
-            food_image.0[rng.gen_range(0..13)].clone(), 
+            &mut food_spawn_event_writer,
             Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.)
         );
     }
@@ -180,25 +140,23 @@ pub fn cell_setup(
 
 pub fn spawn_cell(
     commands: &mut Commands,
+    cell_spawn_event_writer: &mut EventWriter<CellSpawnEvent>,
+    flagellum_spawn_event_writer: &mut EventWriter<FlagellumSpawnEvent>,
+    eye_spawn_event_writer: &mut EventWriter<EyeSpawnEvent>,
     position: Vec3,
     rotation: Quat,
     energy: f32,
-    cell_image: &CellSprite,
-    eye_image: &EyeSprite,
-    flagellum_image: &FlagellumSprite,
     flagella_params: Vec<(f32, f32)>,
     eye_params: Vec<f32>,
     weights: Array2<f32>,
     biases: Array1<f32>,
     state: Array1<f32>,
 ) {
-    commands.insert_resource(TimeCounter(0., 0.));
-
     let flagella: Vec<Entity> = flagella_params.iter().map(
-        |(pos, ang)| spawn_flagellum(commands, flagellum_image.0.clone(), *pos, *ang)
+        |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang)
     ).collect();
     let eyes: Vec<Entity> = eye_params.iter().map(
-        |pos| spawn_eye(commands, eye_image.0.clone(), *pos)
+        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos)
     ).collect(); 
 
     let cell = commands.spawn((
@@ -224,112 +182,87 @@ pub fn spawn_cell(
         ),
         Collider::ball(50.),
         ThinkingTimer(Timer::from_seconds(1./20., TimerMode::Repeating)),
-    )).with_children(|parent| {
-        parent.spawn(SpriteBundle {
-            texture: cell_image.0.clone(),
-            sprite: Sprite{
-                custom_size: Some(Vec2::new(100., 100.)),
-                ..default()
-            },
-            ..default()
-        });
-    }).id();
+    )).id();
 
+    cell_spawn_event_writer.send(CellSpawnEvent(cell));
     commands.entity(cell).push_children(&flagella);
     commands.entity(cell).push_children(&eyes);
 }
 
 pub fn spawn_flagellum(
     commands: &mut Commands,
-    atlas_handle: Handle<TextureAtlas>,
+    flagellum_spawn_event_writer: &mut EventWriter<FlagellumSpawnEvent>,
     position: f32,
     angle: f32,
 ) -> Entity{
     let vert = -position.cos() * 50.;
     let horiz = position.sin() * 50.;
 
-    commands.spawn((
+    let flagellum = commands.spawn((
         Flagellum{
             activation: 0.,
             angle: angle,
         },
-        SpriteSheetBundle {
-            texture_atlas: atlas_handle.clone(),
-            sprite: {
-                let mut flagella_sprite = TextureAtlasSprite::new(0);
-                flagella_sprite.anchor = Anchor::Custom(Vec2::new(0., 0.46));
-                flagella_sprite.custom_size = Some(Vec2::new(50.,50./88.*110.));
-                flagella_sprite
-            },
-            transform: Transform::from_rotation(Quat::from_rotation_z(position + angle))
-                .with_translation(Vec3::new(horiz, vert, 2.)),
-            ..default()
-        },
-        AnimationIndices {first: 0, last: 7},
-        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-    )).id()
+        SpatialBundle::from_transform(
+            Transform::from_rotation(Quat::from_rotation_z(position + angle))
+                .with_translation(Vec3::new(horiz, vert, 2.))
+        ),
+    )).id();
+
+    flagellum_spawn_event_writer.send(FlagellumSpawnEvent(flagellum));
+    flagellum
 }
 
 pub fn spawn_eye(
     commands: & mut Commands,
-    atlas_handle: Handle<TextureAtlas>,
+    eye_spawn_event_writer: &mut EventWriter<EyeSpawnEvent>,
     position: f32,
 ) -> Entity{
     let vert = -position.cos() * 50.;
     let horiz = position.sin() * 50.;
 
-    commands.spawn((
+    let eye = commands.spawn((
         Eye{
             activation: 0.,
         },
-        SpriteSheetBundle {
-            texture_atlas: atlas_handle.clone(),
-            sprite: {
-                let mut eye_sprite = TextureAtlasSprite::new(0);
-                eye_sprite.custom_size = Some(Vec2::new(50./88.*32.,50./88.*32.));
-                eye_sprite
-            },
-            transform: Transform::from_rotation(Quat::from_rotation_z(position))
-                .with_translation(Vec3::new(horiz, vert, 2.)),
-            ..default()
-        },
-        AnimationIndices {first: 0, last: 7},
+        SpatialBundle::from_transform(
+            Transform::from_rotation(Quat::from_rotation_z(position))
+                .with_translation(Vec3::new(horiz, vert, 2.))
+        ),
         Collider::convex_polyline(vec![
             Vec2::new(-10., -5.),
             Vec2::new(10., -5.), 
             Vec2::new(300., -1000.),
             Vec2::new(-300., -1000.), 
             ]).unwrap(),
-    )).id()
+    )).id();
+
+    eye_spawn_event_writer.send(EyeSpawnEvent(eye));
+    eye
 }
 
 pub fn spawn_food(
     commands: &mut Commands,
-    texture: Handle<Image>,
+    food_spawn_event_writer: &mut EventWriter<FoodSpawnEvent>,
     position: Vec3,
 ) -> Entity {
-    commands.spawn((
+    let food = commands.spawn((
         Food {},
-        SpriteBundle{
-            transform: Transform::from_translation(position),
-            texture: texture,
-            sprite: Sprite{
-                custom_size: Some(Vec2::new(20., 20.)),
-                ..default()
-            },
-            ..default()
-        },
+        SpatialBundle::from_transform(Transform::from_translation(position)),
         Collider::ball(10.),
-    )).id()
+    )).id();
+
+    food_spawn_event_writer.send(FoodSpawnEvent(food));
+    food
 }
 
 pub fn cell_food_intersection(
-    mut cell_query: Query<(Entity, &mut Cell, &Collider, &GlobalTransform)>,
+    mut cell_query: Query<(&mut Cell, &Collider, &GlobalTransform)>,
     food_query: Query<&Food>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
 ) {
-    for (cell_entity, mut cell, collider, transform) in cell_query.iter_mut() {
+    for (mut cell, collider, transform) in cell_query.iter_mut() {
         let direction = quat_to_direction(transform.to_scale_rotation_translation().1);
         let angle = (-direction.x).atan2(direction.y);
         let pos = transform.translation();
@@ -340,7 +273,7 @@ pub fn cell_food_intersection(
             QueryFilter::default(), 
             |x| {
                 if food_query.contains(x) {
-                    commands.entity(x).despawn();
+                    commands.entity(x).despawn_recursive();
                     cell.energy += 10.
                 }
                 true
@@ -411,8 +344,8 @@ pub fn cell_thinking(
     eye_query: Query<&Eye>,
 ) {
     for (mut cell, mut timer) in cell_query.iter_mut() {
-        timer.0.tick(Duration::from_secs_f32(FIXED_DELTA));
-        if timer.0.finished() {
+        timer.tick(Duration::from_secs_f32(FIXED_DELTA));
+        if timer.finished() {
             let activations: Vec<f32> = cell.eyes.iter().map(|eye| eye_query.get(*eye).unwrap().activation).collect();
             for (i, act) in activations.iter().enumerate() {
                 cell.state[i] = *act;
@@ -434,7 +367,6 @@ pub fn cell_thinking(
 
 pub fn decrement_energy(
     mut cell_query: Query<(Entity, &mut Cell)>,
-    time: Res<Time>,
     mut commands: Commands,
 ) {
     for (cell_entity, mut cell) in cell_query.iter_mut() {
@@ -446,11 +378,11 @@ pub fn decrement_energy(
 }
 
 pub fn split_cells(
-    cell_query: Query<(Entity, &Cell, &Transform)>,
     mut commands: Commands,
-    cell_image: Res<CellSprite>,
-    eye_image: Res<EyeSprite>,
-    flagellum_image: Res<FlagellumSprite>,
+    mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
+    mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
+    mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
+    cell_query: Query<(Entity, &Cell, &Transform)>,
 ) {
     for (cell_entity, cell, cell_transform) in cell_query.iter().filter(|x| x.1.energy >= SPLIT_ENERGY) {
         let position = cell_transform.translation;
@@ -463,10 +395,10 @@ pub fn split_cells(
 
         commands.entity(cell_entity).despawn_recursive();
         spawn_cell(&mut commands, 
+            &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 
             rotation * Quat::from_rotation_z(0.1), 
             100., 
-            &cell_image, &eye_image, &flagellum_image,
             cell.flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
             cell.eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
@@ -474,10 +406,10 @@ pub fn split_cells(
             state.clone(),
             );
         spawn_cell(&mut commands, 
+            &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 
             rotation * Quat::from_rotation_z(-0.1), 
             100., 
-            &cell_image, &eye_image, &flagellum_image,
             cell.flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
             cell.eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
@@ -489,17 +421,17 @@ pub fn split_cells(
 
 pub fn food_spawning(
     mut commands: Commands,
+    mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
     mut timer: ResMut<FoodTimer>,
-    food_image: Res<FoodSprites>,
 ) {
-    timer.0.tick(Duration::from_secs_f32(FIXED_DELTA));
-    if timer.0.finished() {
+    timer.tick(Duration::from_secs_f32(FIXED_DELTA));
+    for _ in 0..timer.times_finished_this_tick() {
         let normal = Normal::new(0., 15000.).unwrap();
         let mut rng = rand::thread_rng();
         
         spawn_food(
             &mut commands, 
-            food_image.0[rng.gen_range(0..13)].clone(), 
+            &mut food_spawn_event_writer,
             Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.)
         );
     }
@@ -518,8 +450,8 @@ pub fn tanh_inplace(x: &mut f32) {
 }
 
 pub fn count_cells(cell_query: Query<&Cell>, food_query: Query<&Food>, mut timer: ResMut<DebugTimer>, time: Res<Time>) {
-    timer.0.tick(time.delta());
-    if timer.0.finished() {
+    timer.tick(time.delta());
+    if timer.finished() {
         println!("FPS: {}, cell_count: {}, food count: {}", (1./time.delta_seconds()).round(), cell_query.iter().count(), food_query.iter().count());
     }
 }
