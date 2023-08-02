@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::cell::*;
+use super::cell::*;
 
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {

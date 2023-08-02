@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::{prelude::*, render::texture::ImageSampler, sprite::Anchor};
 use rand::Rng;
 
-use crate::cell::*;
+use super::cell::*;
 
 pub struct SpritesPlugin;
 impl Plugin for SpritesPlugin {

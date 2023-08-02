@@ -11,7 +11,7 @@ use rand;
 use ndarray::{Array1, Array2};
 use ndarray_rand::RandomExt;
 
-use crate::physics::*;
+use super::physics::*;
 
 pub const PLAYER_SPEED: f32 = 500.;
 pub const PLAYER_ANGLE_SPEED: f32 = 7.;
@@ -21,30 +21,40 @@ pub const MIN_ENERGY: f32 = 70.;
 
 pub const FIXED_DELTA: f32 = 1./60.;
 
-pub struct CellPlugin;
-impl Plugin for CellPlugin {
+pub struct CellCorePlugin;
+impl Plugin for CellCorePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_event::<CellSpawnEvent>()
             .add_event::<FlagellumSpawnEvent>()
             .add_event::<EyeSpawnEvent>()
             .add_event::<FoodSpawnEvent>()
+            .add_systems(Startup, resource_init)
+            .add_systems(Update, (
+                count_cells,
+                dynamic_thing,
+            ))
+            .add_systems(FixedUpdate, 
+                fixed_thing
+            );  
+    }
+}
+
+pub struct CellPlugin;
+impl Plugin for CellPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_plugins(CellCorePlugin)
             .add_systems(Startup, (
                 cell_setup,
             ))
-            .add_systems(Update, (
-                //keyboard_movement,
-                count_cells,
-                food_spawning,
-                dynamic_thing,
-            ))
             .add_systems(FixedUpdate, (
+                food_spawning,
                 cell_food_intersection,
                 eye_sensing,
                 cell_thinking,
                 decrement_energy,
                 split_cells,
-                fixed_thing
             ));  
     }
 }
@@ -100,6 +110,12 @@ pub struct EyeSpawnEvent(Entity);
 #[derive(Event, Deref, DerefMut)]
 pub struct FoodSpawnEvent(Entity);
 
+pub fn resource_init(mut commands: Commands) {
+    commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
+    commands.insert_resource(DebugTimer(Timer::new(Duration::from_secs_f32(1.), TimerMode::Repeating)));
+    commands.insert_resource(TimeCounter(0., 0.));
+}
+
 pub fn cell_setup(
     mut commands: Commands, 
     mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
@@ -107,10 +123,6 @@ pub fn cell_setup(
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
 ) {
-    commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
-    commands.insert_resource(DebugTimer(Timer::new(Duration::from_secs_f32(1.), TimerMode::Repeating)));
-    commands.insert_resource(TimeCounter(0., 0.));
-
     let normal = Normal::new(0., 10000.).unwrap();
     let mut rng = rand::thread_rng();
     
@@ -315,29 +327,6 @@ pub fn eye_sensing(
     });
 }
 
-/*
-pub fn manual_eye_thing(
-    cell_query: Query<&Cell>,
-    mut flag_query: Query<&mut Flagellum>,
-    eye_query: Query<&Eye>,
- ) {
-    for cell in cell_query.iter() {
-        let activations: Vec<f32> = cell.eyes.iter().map(|eye| eye_query.get(*eye).unwrap().activation).collect();
-        let activations = Array1::from_vec(activations);
-
-        let mut hidden = activations.dot(&cell.w1) + &cell.b1;
-        hidden.map_inplace(tanh_inplace);
-        let mut activations = hidden.dot(&cell.w2) + &cell.b2;
-        activations.map_inplace(sigmoid_inplace);
-        
-        for (f, a) in cell.flagella.iter().zip(activations) {
-            let mut flagellum = flag_query.get_mut(*f).unwrap();
-            flagellum.activation = a;
-        }
-        
-    }
-}
-*/
 pub fn cell_thinking(
     mut cell_query: Query<(&mut Cell, &mut ThinkingTimer)>,
     mut flag_query: Query<&mut Flagellum>,
