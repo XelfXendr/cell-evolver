@@ -26,9 +26,11 @@ impl Plugin for CellCorePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_event::<CellSpawnEvent>()
+            .add_event::<CellDespawnEvent>()
             .add_event::<FlagellumSpawnEvent>()
             .add_event::<EyeSpawnEvent>()
             .add_event::<FoodSpawnEvent>()
+            .add_event::<FoodDespawnEvent>()
             .add_systems(Startup, resource_init)
             .add_systems(Update, (
                 count_cells,
@@ -102,6 +104,9 @@ pub struct TimeCounter(f32, f32);
 pub struct CellSpawnEvent(Entity);
 
 #[derive(Event, Deref, DerefMut)]
+pub struct CellDespawnEvent(Entity);
+
+#[derive(Event, Deref, DerefMut)]
 pub struct FlagellumSpawnEvent(Entity);
 
 #[derive(Event, Deref, DerefMut)]
@@ -109,6 +114,9 @@ pub struct EyeSpawnEvent(Entity);
 
 #[derive(Event, Deref, DerefMut)]
 pub struct FoodSpawnEvent(Entity);
+
+#[derive(Event, Deref, DerefMut)]
+pub struct FoodDespawnEvent(Entity);
 
 pub fn resource_init(mut commands: Commands) {
     commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
@@ -163,7 +171,7 @@ pub fn spawn_cell(
     weights: Array2<f32>,
     biases: Array1<f32>,
     state: Array1<f32>,
-) {
+) -> Entity {
     let flagella: Vec<Entity> = flagella_params.iter().map(
         |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang)
     ).collect();
@@ -196,9 +204,19 @@ pub fn spawn_cell(
         ThinkingTimer(Timer::from_seconds(1./20., TimerMode::Repeating)),
     )).id();
 
-    cell_spawn_event_writer.send(CellSpawnEvent(cell));
     commands.entity(cell).push_children(&flagella);
     commands.entity(cell).push_children(&eyes);
+    cell_spawn_event_writer.send(CellSpawnEvent(cell));
+    cell
+}
+
+pub fn despawn_cell(
+    commands: &mut Commands,
+    cell_despawn_event_writer: &mut EventWriter<CellDespawnEvent>,
+    cell_entity: Entity
+) {
+    commands.entity(cell_entity).despawn_recursive();
+    cell_despawn_event_writer.send(CellDespawnEvent(cell_entity));
 }
 
 pub fn spawn_flagellum(
@@ -268,11 +286,23 @@ pub fn spawn_food(
     food
 }
 
+pub fn despawn_food(
+    commands: &mut Commands,
+    food_despawn_event_writer: &mut EventWriter<FoodDespawnEvent>,
+    food_entity: Entity,
+) {
+    commands.entity(food_entity).despawn_recursive();
+    food_despawn_event_writer.send(FoodDespawnEvent(food_entity));
+}
+
+
+
 pub fn cell_food_intersection(
+    mut commands: Commands,
     mut cell_query: Query<(&mut Cell, &Collider, &GlobalTransform)>,
     food_query: Query<&Food>,
     rapier_context: Res<RapierContext>,
-    mut commands: Commands,
+    mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
 ) {
     for (mut cell, collider, transform) in cell_query.iter_mut() {
         let direction = quat_to_direction(transform.to_scale_rotation_translation().1);
@@ -285,7 +315,7 @@ pub fn cell_food_intersection(
             QueryFilter::default(), 
             |x| {
                 if food_query.contains(x) {
-                    commands.entity(x).despawn_recursive();
+                    despawn_food(&mut commands, &mut food_despawn_event_writer, x);
                     cell.energy += 10.
                 }
                 true
@@ -315,7 +345,6 @@ pub fn eye_sensing(
             QueryFilter::default(), 
             |x| {
                 if let Ok(food_transform) = food_query.get(x) {
-                    //commands.entity(x).despawn();
                     let distance = eye_transform.translation().distance(food_transform.translation());
                     activation = activation.max((1.-distance/1000.).max(0.).min(1.));
                 }
@@ -355,13 +384,14 @@ pub fn cell_thinking(
 }
 
 pub fn decrement_energy(
-    mut cell_query: Query<(Entity, &mut Cell)>,
     mut commands: Commands,
+    mut cell_query: Query<(Entity, &mut Cell)>,
+    mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
 ) {
     for (cell_entity, mut cell) in cell_query.iter_mut() {
         cell.energy -= FIXED_DELTA;
         if cell.energy < MIN_ENERGY {
-            commands.entity(cell_entity).despawn_recursive();
+            despawn_cell(&mut commands, &mut cell_despawn_event_writer, cell_entity);
         }
     }
 }
@@ -369,6 +399,7 @@ pub fn decrement_energy(
 pub fn split_cells(
     mut commands: Commands,
     mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
+    mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
     mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     cell_query: Query<(Entity, &Cell, &Transform)>,
@@ -382,7 +413,7 @@ pub fn split_cells(
         let weight_normal = Normal::new(0., 0.1).unwrap();
         let mut rng = rand::thread_rng();
 
-        commands.entity(cell_entity).despawn_recursive();
+        despawn_cell(&mut commands, &mut cell_despawn_event_writer, cell_entity);
         spawn_cell(&mut commands, 
             &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 
