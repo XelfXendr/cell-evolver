@@ -145,10 +145,10 @@ pub fn texture_fixer(
 
 pub fn cell_sprite_adder(
     mut commands: Commands,
-    mut spawn_event_reader: EventReader<CellSpawnEvent>,
+    new_cell_query: Query<Entity, Added<Cell>>,
     cell_sprite: Res<CellSprite>,
 ) {
-    for cell_entity in spawn_event_reader.iter() {
+    for cell_entity in new_cell_query.iter() {
         let sprite = commands.spawn(SpriteBundle {
             texture: cell_sprite.clone(),
             sprite: Sprite{
@@ -158,16 +158,16 @@ pub fn cell_sprite_adder(
             ..default()
         }).id();
 
-        commands.entity(**cell_entity).add_child(sprite);
+        commands.entity(cell_entity).add_child(sprite);
     }
 }
 
 pub fn flagellum_sprite_adder(
     mut commands: Commands,
-    mut spawn_event_reader: EventReader<FlagellumSpawnEvent>,
+    new_flagellum_query: Query<Entity, Added<Flagellum>>,
     flagellum_sprite: Res<FlagellumSprite>,
 ) {
-    for flagellum_entity in spawn_event_reader.iter() {
+    for flagellum_entity in new_flagellum_query.iter() {
         let sprite = commands.spawn((
             FlagellumSpriteTag,
             SpriteSheetBundle {
@@ -184,16 +184,16 @@ pub fn flagellum_sprite_adder(
             AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
         )).id();
 
-        commands.entity(**flagellum_entity).add_child(sprite);
+        commands.entity(flagellum_entity).add_child(sprite);
     }
 }
 
 pub fn eye_sprite_adder(
     mut commands: Commands,
-    mut spawn_event_reader: EventReader<EyeSpawnEvent>,
+    new_eye_query: Query<Entity, Added<Eye>>,
     eye_sprite: Res<EyeSprite>,
 ) {
-    for eye_entity in spawn_event_reader.iter() {
+    for eye_entity in new_eye_query.iter() {
         let sprite = commands.spawn((
             EyeSpriteTag,
             SpriteSheetBundle {
@@ -208,16 +208,16 @@ pub fn eye_sprite_adder(
             AnimationIndices {first: 0, last: 7},
         )).id();
 
-        commands.entity(**eye_entity).add_child(sprite);
+        commands.entity(eye_entity).add_child(sprite);
     }
 }
 
 pub fn food_sprite_adder(
     mut commands: Commands,
-    mut spawn_event_reader: EventReader<FoodSpawnEvent>,
+    new_food_query: Query<Entity, Added<Food>>,
     food_sprites: Res<FoodSprites>,
 ) {
-    for food_entity in spawn_event_reader.iter() {
+    for food_entity in new_food_query.iter() {
         let rand_index = rand::thread_rng().gen_range(0..food_sprites.len());
         let sprite = commands.spawn(SpriteBundle{
             texture: food_sprites[rand_index].clone(),
@@ -228,6 +228,6 @@ pub fn food_sprite_adder(
             ..default()
         }).id();
 
-        commands.entity(**food_entity).add_child(sprite);
+        commands.entity(food_entity).add_child(sprite);
     }
 }
