@@ -35,6 +35,7 @@ impl Plugin for CellCorePlugin {
             .add_systems(Update, (
                 count_cells,
                 dynamic_thing,
+                delayed_despawn,
             ))
             .add_systems(FixedUpdate, 
                 fixed_thing
@@ -71,6 +72,7 @@ pub struct Cell {
     pub weights: Array2<f32>,
     pub biases: Array1<f32>,
     pub state: Array1<f32>,
+    pub dead: bool,
 }
 
 #[derive(Component)]
@@ -86,6 +88,7 @@ pub struct Eye {
 
 #[derive(Component)]
 pub struct Food {
+    pub eaten: bool,
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -99,6 +102,26 @@ pub struct DebugTimer(Timer);
 
 #[derive(Resource)]
 pub struct TimeCounter(f32, f32);
+
+#[derive(Resource, Default)]
+pub struct DelayedDespawnQueue {
+    pending: Vec<Entity>,
+    current: Vec<Entity>,
+}
+impl DelayedDespawnQueue {
+    pub fn add(&mut self, entity: Entity) {
+        self.pending.push(entity);
+    }
+    pub fn despawn(&mut self, commands: &mut Commands) {
+        for entity in self.current.iter() {
+            if let Some(entity_commands) = commands.get_entity(*entity) {
+                entity_commands.despawn_recursive();
+            }
+        }
+        self.current.clear();
+        std::mem::swap(&mut self.current, &mut self.pending);
+    }
+}
 
 #[derive(Event, Deref, DerefMut)]
 pub struct CellSpawnEvent(Entity);
@@ -122,6 +145,14 @@ pub fn resource_init(mut commands: Commands) {
     commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
     commands.insert_resource(DebugTimer(Timer::new(Duration::from_secs_f32(1.), TimerMode::Repeating)));
     commands.insert_resource(TimeCounter(0., 0.));
+    commands.insert_resource(DelayedDespawnQueue::default());
+}
+
+pub fn delayed_despawn(
+    mut commands: Commands, 
+    mut despawn_queue: ResMut<DelayedDespawnQueue>
+) {
+    despawn_queue.despawn(&mut commands)
 }
 
 pub fn cell_setup(
@@ -187,6 +218,7 @@ pub fn spawn_cell(
             flagella_params: flagella_params,
             eye_params: eye_params,
             weights: weights, biases: biases, state: state,
+            dead: false,
         },
         PhysicsBody {
             velocity: Vec2::ZERO, 
@@ -211,11 +243,11 @@ pub fn spawn_cell(
 }
 
 pub fn despawn_cell(
-    commands: &mut Commands,
+    despawn_queue: &mut DelayedDespawnQueue,
     cell_despawn_event_writer: &mut EventWriter<CellDespawnEvent>,
     cell_entity: Entity
 ) {
-    commands.entity(cell_entity).despawn_recursive();
+    despawn_queue.add(cell_entity);
     cell_despawn_event_writer.send(CellDespawnEvent(cell_entity));
 }
 
@@ -277,7 +309,7 @@ pub fn spawn_food(
     position: Vec3,
 ) -> Entity {
     let food = commands.spawn((
-        Food {},
+        Food { eaten: false },
         SpatialBundle::from_transform(Transform::from_translation(position)),
         Collider::ball(10.),
     )).id();
@@ -287,20 +319,20 @@ pub fn spawn_food(
 }
 
 pub fn despawn_food(
-    commands: &mut Commands,
+    despawn_queue: &mut DelayedDespawnQueue,
     food_despawn_event_writer: &mut EventWriter<FoodDespawnEvent>,
     food_entity: Entity,
 ) {
-    commands.entity(food_entity).despawn_recursive();
+    despawn_queue.add(food_entity);
     food_despawn_event_writer.send(FoodDespawnEvent(food_entity));
 }
 
 
 
 pub fn cell_food_intersection(
-    mut commands: Commands,
+    mut despawn_queue: ResMut<DelayedDespawnQueue>,
     mut cell_query: Query<(&mut Cell, &Collider, &GlobalTransform)>,
-    food_query: Query<&Food>,
+    mut food_query: Query<&mut Food>,
     rapier_context: Res<RapierContext>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
 ) {
@@ -314,9 +346,12 @@ pub fn cell_food_intersection(
             collider, 
             QueryFilter::default(), 
             |x| {
-                if food_query.contains(x) {
-                    despawn_food(&mut commands, &mut food_despawn_event_writer, x);
-                    cell.energy += 10.
+                if let Ok(mut food) = food_query.get_mut(x) {
+                    if !food.eaten {
+                        food.eaten = true;
+                        despawn_food(&mut despawn_queue, &mut food_despawn_event_writer, x);
+                        cell.energy += 10.
+                    }
                 }
                 true
             }
@@ -384,27 +419,30 @@ pub fn cell_thinking(
 }
 
 pub fn decrement_energy(
-    mut commands: Commands,
+    mut despawn_queue: ResMut<DelayedDespawnQueue>,
     mut cell_query: Query<(Entity, &mut Cell)>,
     mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
 ) {
     for (cell_entity, mut cell) in cell_query.iter_mut() {
         cell.energy -= FIXED_DELTA;
         if cell.energy < MIN_ENERGY {
-            despawn_cell(&mut commands, &mut cell_despawn_event_writer, cell_entity);
+            despawn_cell(&mut despawn_queue, &mut cell_despawn_event_writer, cell_entity);
         }
     }
 }
 
 pub fn split_cells(
     mut commands: Commands,
+    mut despawn_queue: ResMut<DelayedDespawnQueue>,
     mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
     mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
     mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
-    cell_query: Query<(Entity, &Cell, &Transform)>,
+    mut cell_query: Query<(Entity, &mut Cell, &Transform)>,
 ) {
-    for (cell_entity, cell, cell_transform) in cell_query.iter().filter(|x| x.1.energy >= SPLIT_ENERGY) {
+    for (cell_entity, mut cell, cell_transform) in cell_query.iter_mut().filter(|x| x.1.energy >= SPLIT_ENERGY && !x.1.dead) {
+        cell.dead = true;
+
         let position = cell_transform.translation;
         let rotation = cell_transform.rotation;
         let (weights, biases, state) = (&cell.weights, &cell.biases, &cell.state);
@@ -413,7 +451,7 @@ pub fn split_cells(
         let weight_normal = Normal::new(0., 0.1).unwrap();
         let mut rng = rand::thread_rng();
 
-        despawn_cell(&mut commands, &mut cell_despawn_event_writer, cell_entity);
+        despawn_cell(&mut despawn_queue, &mut cell_despawn_event_writer, cell_entity);
         spawn_cell(&mut commands, 
             &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 

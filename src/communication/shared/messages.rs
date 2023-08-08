@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::game_logic::{cell::Cell, physics::{PhysicsBody, quat_to_direction}};
 
-#[derive(Serialize, Deserialize, Deref, DerefMut, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Deref, DerefMut, Eq, PartialEq, Hash, Clone, Copy)]
 pub struct EntityId(u32);
 impl EntityId {
     pub fn new(entity: Entity) -> Self {
@@ -11,7 +11,7 @@ impl EntityId {
     }
 }
 
-#[derive(Serialize, Deserialize, Deref, DerefMut)]
+#[derive(Serialize, Deserialize, Deref, DerefMut, Clone, Copy)]
 pub struct Tick(u64);
 impl Tick {
     pub fn new(tick: u64) -> Self {
@@ -19,7 +19,7 @@ impl Tick {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ServerMessage {
     CellUpdate(Tick, EntityId, CellState),
     CellSpawn(EntityId, CellParams, CellState),
@@ -54,7 +54,7 @@ impl ServerMessage {
 }
 
 // Information structs
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CellState {
     pub position: Vec2,
     pub velocity: Vec2,
@@ -81,7 +81,7 @@ impl CellState {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CellParams {
     pub flagella_params: Vec<(f32, f32)>,
     pub eye_params: Vec<f32>,

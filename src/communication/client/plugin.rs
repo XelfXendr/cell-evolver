@@ -9,8 +9,9 @@ use bevy_quinnet::client::{QuinnetClientPlugin, Client};
 use ndarray::{Array2, Array1};
 
 use crate::communication::shared::messages::{ServerMessage, EntityId, CellParams, CellState, Tick};
-use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell};
+use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell, DelayedDespawnQueue};
 use crate::game_logic::physics::PhysicsBody;
+use crate::game_logic::sprites::{cell_sprite_adder, eye_sprite_adder, flagellum_sprite_adder, food_sprite_adder};
 
 pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
@@ -19,7 +20,11 @@ impl Plugin for ClientPlugin {
             .add_plugins(QuinnetClientPlugin::default())
             .add_systems(Startup, init)
             .add_systems(Update, (
-                read_messages,
+                read_messages
+                    .before(cell_sprite_adder)
+                    .before(eye_sprite_adder)
+                    .before(flagellum_sprite_adder)
+                    .before(food_sprite_adder),
                 add_ticks_to_cells,
             ));
     }
@@ -39,7 +44,7 @@ fn init(
 
     client.open_connection(
         ConnectionConfiguration::from_ips(
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 
+            IpAddr::V4(Ipv4Addr::new(127,0,0,1)),//Ipv4Addr::new(192, 168, 1, 45)), 
             30800, 
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
             0, 
@@ -59,6 +64,7 @@ fn add_ticks_to_cells(
 
 fn read_messages(
     mut commands: Commands,
+    mut despawn_queue: ResMut<DelayedDespawnQueue>,
     mut client: ResMut<Client>,
     mut entity_map: ResMut<EntityMap>,
     mut cell_spawn_event_writer: EventWriter<CellSpawnEvent>,
@@ -86,7 +92,7 @@ fn read_messages(
                 entity, cell_params, cell_state
             ),
             ServerMessage::CellDespawn(entity) => cell_despawn_handler(
-                &mut commands, 
+                &mut despawn_queue, 
                 &mut entity_map, 
                 &mut cell_despawn_event_writer, 
                 entity
@@ -98,7 +104,7 @@ fn read_messages(
                 entity, position
             ),
             ServerMessage::FoodDespawn(entity) => food_despawn_handler(
-                &mut commands, 
+                &mut despawn_queue, 
                 &mut entity_map, 
                 &mut food_despawn_event_writer, 
                 entity,
@@ -139,13 +145,13 @@ fn cell_spawn_handler(
 }
 
 fn cell_despawn_handler(
-    commands: &mut Commands,
+    despawn_queue: &mut DelayedDespawnQueue,
     entity_map: &mut EntityMap,
     cell_despawn_event_writer: &mut EventWriter<CellDespawnEvent>,
     entity: EntityId,
 ) {
     if let Some(cell_entity) = entity_map.remove(&entity) {
-        despawn_cell(commands, cell_despawn_event_writer, cell_entity);
+        despawn_cell(despawn_queue, cell_despawn_event_writer, cell_entity);
     }
 }
 
@@ -169,13 +175,13 @@ fn food_spawn_handler(
 }
 
 fn food_despawn_handler(
-    commands: &mut Commands,
+    despawn_queue: &mut DelayedDespawnQueue,
     entity_map: &mut EntityMap,
     food_despawn_event_writer: &mut EventWriter<FoodDespawnEvent>,
     entity: EntityId,
 ) {
     if let Some(food_entity) = entity_map.remove(&entity) {
-        despawn_food(commands, food_despawn_event_writer, food_entity);
+        despawn_food(despawn_queue, food_despawn_event_writer, food_entity);
     }
 }
 
