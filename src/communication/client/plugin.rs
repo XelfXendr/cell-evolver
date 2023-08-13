@@ -9,8 +9,8 @@ use bevy_quinnet::client::{QuinnetClientPlugin, Client};
 use ndarray::{Array2, Array1};
 
 use crate::communication::shared::messages::{ServerMessage, EntityId, CellParams, CellState, Tick};
-use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell, DelayedDespawnQueue};
-use crate::game_logic::physics::PhysicsBody;
+use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell, DelayedDespawnQueue, Energy};
+use crate::game_logic::physics::{Velocity, Acceleration, AngularVelocity, AngularAcceleration};
 use crate::game_logic::sprites::{cell_sprite_adder, eye_sprite_adder, flagellum_sprite_adder, food_sprite_adder};
 
 pub struct ClientPlugin;
@@ -44,7 +44,7 @@ fn init(
 
     client.open_connection(
         ConnectionConfiguration::from_ips(
-            IpAddr::V4(Ipv4Addr::new(127,0,0,1)),//Ipv4Addr::new(192, 168, 1, 45)), 
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 45)), 
             30800, 
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
             0, 
@@ -73,7 +73,7 @@ fn read_messages(
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
-    mut cell_query: Query<(&mut Cell, &mut Transform, &mut PhysicsBody, &mut LastTickUpdated)>
+    mut cell_query: Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>
 ) {
     let connection = client.connection_mut();
     while let Some(message) = connection.try_receive_message::<ServerMessage>() {
@@ -187,23 +187,23 @@ fn food_despawn_handler(
 
 fn cell_update_handler(
     entity_map: &EntityMap,
-    cell_query: &mut Query<(&mut Cell, &mut Transform, &mut PhysicsBody, &mut LastTickUpdated)>,
+    cell_query: &mut Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>,
     tick: Tick,
     entity: EntityId,
     cell_state: &CellState,
 ) {
-    if let Some((mut cell, mut cell_transform, mut cell_body, mut last_tick)) = entity_map.get(&entity).and_then(|e| cell_query.get_mut(*e).ok()) {
+    if let Some((mut last_tick, mut transform, mut velocity, mut acceleration, mut angular_velocity, mut angular_acceleration, mut energy)) = entity_map.get(&entity).and_then(|e| cell_query.get_mut(*e).ok()) {
         if *tick <= **last_tick {
             return;
         }
 
-        cell_transform.translation = cell_state.position.extend(0.);
-        cell_body.velocity = cell_state.velocity;
-        cell_body.acceleration = cell_state.acceleration;
-        cell_transform.rotation = Quat::from_rotation_z(cell_state.rotation);
-        cell_body.angular_velocity = cell_state.angular_velocity;
-        cell_body.angular_acceleration = cell_state.angular_acceleration;
-        cell.energy = cell_state.energy;
+        transform.translation = cell_state.position.extend(0.);
+        **velocity = cell_state.velocity;
+        **acceleration = cell_state.acceleration;
+        transform.rotation = Quat::from_rotation_z(cell_state.rotation);
+        **angular_velocity = cell_state.angular_velocity;
+        **angular_acceleration = cell_state.angular_acceleration;
+        **energy = cell_state.energy;
         **last_tick = *tick;
     }
 }

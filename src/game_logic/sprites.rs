@@ -108,12 +108,12 @@ fn animate_sprite(
 
 pub fn flagellum_animation_speed(
     mut sprite_query: Query<(&Parent, &mut AnimationTimer), With<FlagellumSpriteTag>>,
-    flag_query: Query<&Flagellum>, 
+    flag_query: Query<&Activation, With<Flagellum>>, 
 ) {
     for (parent, mut timer) in sprite_query.iter_mut() {
-        if let Ok(flagellum) = flag_query.get(parent.get()) {
+        if let Ok(activation) = flag_query.get(parent.get()) {
             timer.set_duration(
-                Duration::from_secs_f32(0.033 / f32::max(0.1, flagellum.activation))
+                Duration::from_secs_f32(0.033 / f32::max(0.1, **activation))
             );
         } 
     }
@@ -121,11 +121,11 @@ pub fn flagellum_animation_speed(
 
 pub fn eye_focus_animation(
     mut sprite_query: Query<(&Parent, &AnimationIndices, &mut TextureAtlasSprite), With<EyeSpriteTag>>,
-    eye_query: Query<&Eye> 
+    eye_query: Query<&Activation, With<Eye>> 
 ) {
     for (parent, indices, mut sprite) in sprite_query.iter_mut() {
-        if let Ok(eye) = eye_query.get(parent.get()) {
-            sprite.index = (((indices.last as f32) * eye.activation).ceil() as usize).max(indices.first).min(indices.last);
+        if let Ok(activation) = eye_query.get(parent.get()) {
+            sprite.index = (((indices.last as f32) * **activation).ceil() as usize).max(indices.first).min(indices.last);
         }
     }
 }

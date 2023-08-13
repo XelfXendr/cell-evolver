@@ -9,8 +9,8 @@ use bevy_quinnet::shared::QuinnetError;
 use bevy_quinnet::shared::channel::ChannelId;
 
 use crate::communication::shared::messages::ServerMessage;
-use crate::game_logic::cell::{Cell, CellDespawnEvent, Food, FoodDespawnEvent};
-use crate::game_logic::physics::PhysicsBody;
+use crate::game_logic::cell::{Cell, CellDespawnEvent, Food, FoodDespawnEvent, FlagellaParams, EyeParams, Energy};
+use crate::game_logic::physics::{Velocity, Acceleration, AngularVelocity, AngularAcceleration};
 
 #[derive(Resource, Deref, DerefMut)]
 pub struct TickCounter(u64);
@@ -88,16 +88,16 @@ fn send_reliable_messages(
 
 fn connect_event_handler(
     mut message_queue: ResMut<MessageQueue>,
-    cell_query: Query<(Entity, &Cell, &Transform, &PhysicsBody)>,
+    cell_query: Query<(Entity, &FlagellaParams, &EyeParams, &Transform, &Velocity, &Acceleration, &AngularVelocity, &AngularAcceleration, &Energy), With<Cell>>,
     food_query: Query<(Entity, &Transform), With<Food>>,
     mut event_reader: EventReader<ConnectionEvent>,
 ) {
     for ConnectionEvent{id} in event_reader.iter() {
         info!("Client id {} connected.", id);
-        for (cell_entity, cell, cell_transform, cell_body) in cell_query.iter() {
+        for (entity, flagella_params, eye_params, transform, velocity, acceleration, ang_velocity, ang_acceleration, energy) in cell_query.iter() {
             message_queue.add(
                 Recipient::User(*id), 
-                ServerMessage::cell_spawn(cell_entity, cell, cell_transform, cell_body)
+                ServerMessage::cell_spawn(entity, flagella_params, eye_params, transform, *velocity, *acceleration, *ang_velocity, *ang_acceleration, *energy)
             );
         }
         for (food_entity, food_transform) in food_query.iter() {
@@ -111,13 +111,13 @@ fn connect_event_handler(
 
 fn cell_spawn_handler(
     mut message_queue: ResMut<MessageQueue>,
-    new_cell_query: Query<(Entity, &Cell, &Transform, &PhysicsBody), Added<Cell>>,
+    new_cell_query: Query<(Entity, &FlagellaParams, &EyeParams, &Transform, &Velocity, &Acceleration, &AngularVelocity, &AngularAcceleration, &Energy), Added<Cell>>,
     mut despawn_event_reader: EventReader<CellDespawnEvent>,
 ) {
-    for (cell_entity, cell, cell_transform, cell_body) in new_cell_query.iter() {
+    for (entity, flagella_params, eye_params, transform, velocity, acceleration, ang_velocity, ang_acceleration, energy) in new_cell_query.iter() {
         message_queue.add(
             Recipient::Broadcast, 
-            ServerMessage::cell_spawn(cell_entity, cell, cell_transform, cell_body)
+            ServerMessage::cell_spawn(entity, flagella_params, eye_params, transform, *velocity, *acceleration, *ang_velocity, *ang_acceleration, *energy)
         );
     }
     for cell_entity in despawn_event_reader.iter() {
@@ -150,13 +150,13 @@ fn food_spawn_handler(
 fn update_cells(
     server: Res<Server>,
     mut tick: ResMut<TickCounter>,
-    cell_query: Query<(Entity, &Cell, &Transform, &PhysicsBody)>,
+    cell_query: Query<(Entity, &Transform, &Velocity, &Acceleration, &AngularVelocity, &AngularAcceleration, &Energy)>,
     ) {
     let endpoint = server.endpoint();
-    for (cell_entity, cell, cell_transform, cell_body) in cell_query.iter() {
+    for (entity, transform, velocity, acceleration, ang_velocity, ang_acceleration, energy) in cell_query.iter() {
         let _ = endpoint.broadcast_message_on::<ServerMessage>(
             ChannelId::Unreliable, 
-            ServerMessage::cell_update(**tick, cell_entity, cell, cell_transform, cell_body)
+            ServerMessage::cell_update(**tick, entity, transform, *velocity, *acceleration, *ang_velocity, *ang_acceleration, *energy)
         );
     }
     **tick += 1;

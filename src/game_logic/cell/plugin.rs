@@ -11,7 +11,9 @@ use rand;
 use ndarray::{Array1, Array2};
 use ndarray_rand::RandomExt;
 
-use super::physics::*;
+use crate::game_logic::physics::*;
+
+use super::*;
 
 pub const PLAYER_SPEED: f32 = 500.;
 pub const PLAYER_ANGLE_SPEED: f32 = 7.;
@@ -62,90 +64,11 @@ impl Plugin for CellPlugin {
     }
 }
 
-#[derive(Component)]
-pub struct Cell {
-    pub flagella: Vec<Entity>,
-    pub eyes: Vec<Entity>,
-    pub energy: f32,
-    pub flagella_params: Vec<(f32, f32)>,
-    pub eye_params: Vec<f32>,
-    pub weights: Array2<f32>,
-    pub biases: Array1<f32>,
-    pub state: Array1<f32>,
-    pub dead: bool,
-}
-
-#[derive(Component)]
-pub struct Flagellum {
-    pub activation: f32,
-    pub angle: f32,
-}
-
-#[derive(Component)]
-pub struct Eye {
-    pub activation: f32,
-}
-
-#[derive(Component)]
-pub struct Food {
-    pub eaten: bool,
-}
-
-#[derive(Component, Deref, DerefMut)]
-pub struct ThinkingTimer(Timer);
-
-#[derive(Resource, Deref, DerefMut)]
-pub struct FoodTimer(Timer);
-
-#[derive(Resource, Deref, DerefMut)]
-pub struct DebugTimer(Timer);
-
-#[derive(Resource)]
-pub struct TimeCounter(f32, f32);
-
-#[derive(Resource, Default)]
-pub struct DelayedDespawnQueue {
-    pending: Vec<Entity>,
-    current: Vec<Entity>,
-}
-impl DelayedDespawnQueue {
-    pub fn add(&mut self, entity: Entity) {
-        self.pending.push(entity);
-    }
-    pub fn despawn(&mut self, commands: &mut Commands) {
-        for entity in self.current.iter() {
-            if let Some(entity_commands) = commands.get_entity(*entity) {
-                entity_commands.despawn_recursive();
-            }
-        }
-        self.current.clear();
-        std::mem::swap(&mut self.current, &mut self.pending);
-    }
-}
-
-#[derive(Event, Deref, DerefMut)]
-pub struct CellSpawnEvent(Entity);
-
-#[derive(Event, Deref, DerefMut)]
-pub struct CellDespawnEvent(Entity);
-
-#[derive(Event, Deref, DerefMut)]
-pub struct FlagellumSpawnEvent(Entity);
-
-#[derive(Event, Deref, DerefMut)]
-pub struct EyeSpawnEvent(Entity);
-
-#[derive(Event, Deref, DerefMut)]
-pub struct FoodSpawnEvent(Entity);
-
-#[derive(Event, Deref, DerefMut)]
-pub struct FoodDespawnEvent(Entity);
-
 pub fn resource_init(mut commands: Commands) {
     commands.insert_resource(FoodTimer(Timer::new(Duration::from_secs_f32(0.05), TimerMode::Repeating)));
     commands.insert_resource(DebugTimer(Timer::new(Duration::from_secs_f32(1.), TimerMode::Repeating)));
     commands.insert_resource(TimeCounter(0., 0.));
-    commands.insert_resource(DelayedDespawnQueue::default());
+    commands.insert_resource(DelayedDespawnQueue::new());
 }
 
 pub fn delayed_despawn(
@@ -211,23 +134,15 @@ pub fn spawn_cell(
     ).collect(); 
 
     let cell = commands.spawn((
-        Cell { 
-            flagella: flagella.clone(),
-            eyes: eyes.clone(),
-            energy: energy,
-            flagella_params: flagella_params,
-            eye_params: eye_params,
-            weights: weights, biases: biases, state: state,
-            dead: false,
-        },
-        PhysicsBody {
-            velocity: Vec2::ZERO, 
-            acceleration: Vec2::ZERO,
-            angular_velocity: 0.,
-            angular_acceleration: 0.,
-            drag: 2.,
-            angular_drag: 2.,
-        },
+        CellBundle::new( 
+            flagella.clone(),
+            eyes.clone(),
+            flagella_params,
+            eye_params,
+            energy, false,
+            weights, biases, state,
+        ),
+        PhysicsBundle::from_drag(2., 2.),
         SpatialBundle::from_transform(
             Transform::from_translation(position)
                 .with_rotation(rotation)
@@ -261,10 +176,7 @@ pub fn spawn_flagellum(
     let horiz = position.sin() * 50.;
 
     let flagellum = commands.spawn((
-        Flagellum{
-            activation: 0.,
-            angle: angle,
-        },
+        FlagellumBundle::new(0., angle),
         SpatialBundle::from_transform(
             Transform::from_rotation(Quat::from_rotation_z(position + angle))
                 .with_translation(Vec3::new(horiz, vert, 2.))
@@ -284,9 +196,7 @@ pub fn spawn_eye(
     let horiz = position.sin() * 50.;
 
     let eye = commands.spawn((
-        Eye{
-            activation: 0.,
-        },
+        EyeBundle::new(0.),
         SpatialBundle::from_transform(
             Transform::from_rotation(Quat::from_rotation_z(position))
                 .with_translation(Vec3::new(horiz, vert, 2.))
@@ -309,7 +219,7 @@ pub fn spawn_food(
     position: Vec3,
 ) -> Entity {
     let food = commands.spawn((
-        Food { eaten: false },
+        FoodBundle::new(),
         SpatialBundle::from_transform(Transform::from_translation(position)),
         Collider::ball(10.),
     )).id();
@@ -331,12 +241,12 @@ pub fn despawn_food(
 
 pub fn cell_food_intersection(
     mut despawn_queue: ResMut<DelayedDespawnQueue>,
-    mut cell_query: Query<(&mut Cell, &Collider, &GlobalTransform)>,
-    mut food_query: Query<&mut Food>,
+    mut cell_query: Query<(&mut Energy, &Collider, &GlobalTransform), With<Cell>>,
+    mut food_query: Query<&mut Dead, With<Food>>,
     rapier_context: Res<RapierContext>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
 ) {
-    for (mut cell, collider, transform) in cell_query.iter_mut() {
+    for (mut energy, collider, transform) in cell_query.iter_mut() {
         let direction = quat_to_direction(transform.to_scale_rotation_translation().1);
         let angle = (-direction.x).atan2(direction.y);
         let pos = transform.translation();
@@ -346,11 +256,11 @@ pub fn cell_food_intersection(
             collider, 
             QueryFilter::default(), 
             |x| {
-                if let Ok(mut food) = food_query.get_mut(x) {
-                    if !food.eaten {
-                        food.eaten = true;
+                if let Ok(mut eaten) = food_query.get_mut(x) {
+                    if !**eaten {
+                        **eaten = true;
                         despawn_food(&mut despawn_queue, &mut food_despawn_event_writer, x);
-                        cell.energy += 10.
+                        **energy += 10.
                     }
                 }
                 true
@@ -360,14 +270,14 @@ pub fn cell_food_intersection(
 }
 
 pub fn eye_sensing(
-    mut eye_query: Query<(&GlobalTransform, &mut Eye, &Collider)>,
+    mut eye_query: Query<(&mut Activation, &GlobalTransform, &Collider), With<Eye>>,
     food_query: Query<&GlobalTransform, With<Food>>,
     rapier_context: Res<RapierContext>,
 ) {
     eye_query
         .par_iter_mut()
         .batching_strategy(BatchingStrategy::new().min_batch_size(32))
-        .for_each_mut(|(eye_transform, mut eye, collider)| {
+        .for_each_mut(|(mut eye_activation, eye_transform, collider)| {
 
         let mut activation: f32 = 0.;
         let direction = quat_to_direction(eye_transform.to_scale_rotation_translation().1);
@@ -387,32 +297,32 @@ pub fn eye_sensing(
             }
         );
 
-        eye.activation = activation;
+        **eye_activation = activation;
     });
 }
 
 pub fn cell_thinking(
-    mut cell_query: Query<(&mut Cell, &mut ThinkingTimer)>,
-    mut flag_query: Query<&mut Flagellum>,
-    eye_query: Query<&Eye>,
+    mut cell_query: Query<(&mut NeuronState, &NeuronWeights, &NeuronBiases, &mut ThinkingTimer, &CellEyes, &CellFlagella)>,
+    mut flag_query: Query<&mut Activation, With<Flagellum>>,
+    eye_query: Query<&Activation, With<Eye>>,
 ) {
-    for (mut cell, mut timer) in cell_query.iter_mut() {
+    for (mut state, weights, biases, mut timer, eyes, flagella) in cell_query.iter_mut() {
         timer.tick(Duration::from_secs_f32(FIXED_DELTA));
         if timer.finished() {
-            let activations: Vec<f32> = cell.eyes.iter().map(|eye| eye_query.get(*eye).unwrap().activation).collect();
+            let activations: Vec<f32> = eyes.iter().map(|eye| **eye_query.get(*eye).unwrap()).collect();
             for (i, act) in activations.iter().enumerate() {
-                cell.state[i] = *act;
+                state[i] = *act;
             }
             
-            cell.state = cell.state.dot(&cell.weights) + &cell.biases;
-            let activation_range = s![cell.flagella.len()..cell.state.shape()[0]-cell.eyes.len()];
-            cell.state.slice_mut(activation_range).map_inplace(tanh_inplace);
-            let activation_range = s![cell.state.shape()[0]-cell.eyes.len()..];
-            cell.state.slice_mut(activation_range).map_inplace(sigmoid_inplace);
+            **state = state.dot(&**weights) + &**biases;
+            let activation_range = s![flagella.len()..state.shape()[0]-eyes.len()];
+            state.slice_mut(activation_range).map_inplace(tanh_inplace);
+            let activation_range = s![state.shape()[0]-eyes.len()..];
+            state.slice_mut(activation_range).map_inplace(sigmoid_inplace);
             
-            for (f, a) in cell.flagella.iter().zip(cell.state.slice(activation_range)) {
-                let mut flagellum = flag_query.get_mut(*f).unwrap();
-                flagellum.activation = *a;
+            for (f, a) in flagella.iter().zip(state.slice(activation_range)) {
+                let mut activation = flag_query.get_mut(*f).unwrap();
+                **activation = *a;
             }
         }
     }
@@ -420,12 +330,12 @@ pub fn cell_thinking(
 
 pub fn decrement_energy(
     mut despawn_queue: ResMut<DelayedDespawnQueue>,
-    mut cell_query: Query<(Entity, &mut Cell)>,
+    mut cell_query: Query<(Entity, &mut Energy), With<Cell>>,
     mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
 ) {
-    for (cell_entity, mut cell) in cell_query.iter_mut() {
-        cell.energy -= FIXED_DELTA;
-        if cell.energy < MIN_ENERGY {
+    for (cell_entity, mut energy) in cell_query.iter_mut() {
+        **energy -= FIXED_DELTA;
+        if **energy < MIN_ENERGY {
             despawn_cell(&mut despawn_queue, &mut cell_despawn_event_writer, cell_entity);
         }
     }
@@ -438,14 +348,14 @@ pub fn split_cells(
     mut cell_despawn_event_writer: EventWriter<CellDespawnEvent>,
     mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
-    mut cell_query: Query<(Entity, &mut Cell, &Transform)>,
+    mut cell_query: Query<(Entity, &mut Dead, &Energy, &NeuronWeights, &NeuronBiases, &NeuronState, &FlagellaParams, &EyeParams, &Transform), With<Cell>>,
 ) {
-    for (cell_entity, mut cell, cell_transform) in cell_query.iter_mut().filter(|x| x.1.energy >= SPLIT_ENERGY && !x.1.dead) {
-        cell.dead = true;
+    for (cell_entity, mut dead, _, weights, biases, state, flagella_params, eye_params, cell_transform) in cell_query.iter_mut().filter(|(_, dead, energy, _, _, _, _, _, _)| ***energy >= SPLIT_ENERGY && !***dead) {
+        **dead = true;
 
         let position = cell_transform.translation;
         let rotation = cell_transform.rotation;
-        let (weights, biases, state) = (&cell.weights, &cell.biases, &cell.state);
+        let (weights, biases, state) = (&**weights, &**biases, &**state);
         
         let normal = Normal::new(0., 0.01).unwrap();
         let weight_normal = Normal::new(0., 0.1).unwrap();
@@ -457,8 +367,8 @@ pub fn split_cells(
             position, 
             rotation * Quat::from_rotation_z(0.1), 
             100., 
-            cell.flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
-            cell.eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
+            flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
+            eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
             biases.map(|x| x + weight_normal.sample(&mut rng)),
             state.clone(),
@@ -468,8 +378,8 @@ pub fn split_cells(
             position, 
             rotation * Quat::from_rotation_z(-0.1), 
             100., 
-            cell.flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
-            cell.eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
+            flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
+            eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
             biases.map(|x| x + weight_normal.sample(&mut rng)),
             state.clone(),

@@ -1,7 +1,10 @@
 use bevy::prelude::{Deref, DerefMut, Entity, Transform, Vec2};
 use serde::{Serialize, Deserialize};
 
-use crate::game_logic::{cell::Cell, physics::{PhysicsBody, quat_to_direction}};
+use crate::game_logic::{
+    cell::{Energy, FlagellaParams, EyeParams}, 
+    physics::{quat_to_direction, Acceleration, AngularVelocity, AngularAcceleration, Velocity}
+};
 
 #[derive(Serialize, Deserialize, Deref, DerefMut, Eq, PartialEq, Hash, Clone, Copy)]
 pub struct EntityId(u32);
@@ -28,18 +31,33 @@ pub enum ServerMessage {
     FoodDespawn(EntityId)
 }
 impl ServerMessage {
-    pub fn cell_update(tick: u64, entity: Entity, cell: &Cell, cell_transform: &Transform, cell_body: &PhysicsBody) -> Self {
+    pub fn cell_update(tick: u64, 
+        entity: Entity, 
+        transform: &Transform, 
+        velocity: Velocity, 
+        acceleration: Acceleration, 
+        ang_velocity: AngularVelocity, 
+        ang_acceleration: AngularAcceleration,
+        energy: Energy) -> Self {
         Self::CellUpdate(
             Tick::new(tick),
             EntityId::new(entity),
-            CellState::new(cell, cell_transform, cell_body)
+            CellState::new(transform, velocity, acceleration, ang_velocity, ang_acceleration, energy),
         )
     }
-    pub fn cell_spawn(entity: Entity, cell: &Cell, cell_transform: &Transform, cell_body: &PhysicsBody) -> Self {
+    pub fn cell_spawn(entity: Entity, 
+        flagella_params: &FlagellaParams,
+        eye_params: &EyeParams,
+        transform: &Transform, 
+        velocity: Velocity, 
+        acceleration: Acceleration, 
+        ang_velocity: AngularVelocity, 
+        ang_acceleration: AngularAcceleration,
+        energy: Energy) -> Self {
         Self::CellSpawn(
             EntityId::new(entity),
-            CellParams::new(cell),
-            CellState::new(cell, cell_transform, cell_body)
+            CellParams::new(flagella_params, eye_params),
+            CellState::new(transform, velocity, acceleration, ang_velocity, ang_acceleration, energy),
         )
     }
     pub fn cell_despawn(entity: Entity) -> Self {
@@ -65,18 +83,25 @@ pub struct CellState {
     pub energy: f32,
 }
 impl CellState {
-    pub fn new(cell: &Cell, cell_transform: &Transform, cell_body: &PhysicsBody) -> Self {
+    pub fn new(
+        transform: &Transform, 
+        velocity: Velocity, 
+        acceleration: Acceleration, 
+        ang_velocity: AngularVelocity, 
+        ang_acceleration: AngularAcceleration,
+        energy: Energy
+    ) -> Self {
         Self {
-            position: cell_transform.translation.truncate(),
-            velocity: cell_body.velocity,
-            acceleration: cell_body.acceleration,
+            position: transform.translation.truncate(),
+            velocity: *velocity,
+            acceleration: *acceleration,
             rotation: {
-                let direction = quat_to_direction(cell_transform.rotation);
+                let direction = quat_to_direction(transform.rotation);
                 (-direction.x).atan2(direction.y)
             },
-            angular_velocity: cell_body.angular_velocity,
-            angular_acceleration: cell_body.angular_acceleration,
-            energy: cell.energy,
+            angular_velocity: *ang_velocity,
+            angular_acceleration: *ang_acceleration,
+            energy: *energy,
         }
     }
 }
@@ -87,10 +112,10 @@ pub struct CellParams {
     pub eye_params: Vec<f32>,
 }
 impl CellParams {
-    pub fn new(cell: &Cell) -> Self {
+    pub fn new(flagella_params: &FlagellaParams, eye_params: &EyeParams) -> Self {
         Self {
-            flagella_params: cell.flagella_params.clone(),
-            eye_params: cell.eye_params.clone(),
+            flagella_params: (**flagella_params).clone(),
+            eye_params: (**eye_params).clone(),
         }
     }
 }
