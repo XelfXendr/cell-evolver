@@ -1,10 +1,14 @@
 //straight line
-x = (-sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2) + c.x^3 + c.y^2 c.x)/(c.x^2 + c.y^2), 
+x = (-sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2) + c.x^3 + c.y^2 c.x)/(c.x^2 + c.y^2),
+c.x\cdot\left(1-\frac{r^2}{\sqrt{c.x^{2}+c.y^{2}}}\right)
 y = (-(c.y sqrt(c.x^2 (c.x^2 + c.y^2) r^2))/(c.x^2 + c.y^2) + (c.y c.x^3)/(c.x^2 + c.y^2) + (c.y^3 c.x)/(c.x^2 + c.y^2))/c.x, 
+c.y\left(1-\frac{r^2}{\sqrt{c.x^{2}+c.y^{2}}}\right)
 a = (-(c.x^2 sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2))/(c.x^2 + c.y^2) + c.x r^2 - (c.y^2 sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2))/(c.x^2 + c.y^2) + c.x^5/(c.x^2 + c.y^2) + (2 c.y^2 c.x^3)/(c.x^2 + c.y^2) - c.x^3 - c.y^2 c.x + (c.y^4 c.x)/(c.x^2 + c.y^2))/(2 c.x r^2), l = 0, h = 0
 
-x = (sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2) + c.x^3 + c.y^2 c.x)/(c.x^2 + c.y^2), 
+x = (sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2) + c.x^3 + c.y^2 c.x)/(c.x^2 + c.y^2),
+c.x\cdot\left(1+\frac{r^2}{\sqrt{c.x^{2}+c.y^{2}}}\right) 
 y = ((c.y sqrt(c.x^2 (c.x^2 + c.y^2) r^2))/(c.x^2 + c.y^2) + (c.y c.x^3)/(c.x^2 + c.y^2) + (c.y^3 c.x)/(c.x^2 + c.y^2))/c.x, 
+c.y\cdot\left(1+\frac{r^2}{\sqrt{c.x^{2}+c.y^{2}}}\right)
 a = ((c.x^2 sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2))/(c.x^2 + c.y^2) + c.x r^2 + (c.y^2 sqrt(c.x^4 r^2 + c.y^2 c.x^2 r^2))/(c.x^2 + c.y^2) + c.x^5/(c.x^2 + c.y^2) + (2 c.y^2 c.x^3)/(c.x^2 + c.y^2) - c.x^3 - c.y^2 c.x + (c.y^4 c.x)/(c.x^2 + c.y^2))/(2 c.x r^2), l = 0, h = 0
 
 //m arm, first
