@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::{prelude::*, render::texture::ImageSampler, sprite::Anchor};
+use bevy::{prelude::*, sprite::Anchor};
 use rand::Rng;
 
 use super::cell::*;
@@ -14,7 +14,6 @@ impl Plugin for SpritesPlugin {
             .init_resource::<FlagellumSprite>()
             .init_resource::<FoodSprites>()
             .add_systems(Update, (
-                texture_fixer,
                 animate_sprite,
                 flagellum_animation_speed,
                 eye_focus_animation,
@@ -126,19 +125,6 @@ pub fn eye_focus_animation(
     for (parent, indices, mut sprite) in sprite_query.iter_mut() {
         if let Ok(activation) = eye_query.get(parent.get()) {
             sprite.index = (((indices.last as f32) * **activation).ceil() as usize).max(indices.first).min(indices.last);
-        }
-    }
-}
-
-pub fn texture_fixer(
-    mut texture_event: EventReader<AssetEvent<Image>>,
-    mut assets: ResMut<Assets<Image>>
-) {
-    for ev in texture_event.iter() {
-        if let AssetEvent::Created {handle} = ev {
-            if let Some(texture) = assets.get_mut(&handle) {
-                texture.sampler_descriptor = ImageSampler::nearest();
-            }
         }
     }
 }

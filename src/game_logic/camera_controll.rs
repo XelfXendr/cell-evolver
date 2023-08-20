@@ -1,30 +1,44 @@
-use bevy::{prelude::*, input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit}};
-
-
+use bevy::{prelude::*, input::mouse::{MouseWheel, MouseScrollUnit}, window::PrimaryWindow};
 pub struct CamControllPlugin;
 impl Plugin for CamControllPlugin {
     fn build(&self, app: &mut App) {
         app
+            .insert_resource(ClearColor(Color::hex("0f0f0f").unwrap()))
             .add_systems(Startup, camera_setup)
             .add_systems(Update, camera_grab_system);
     }
 }
 
+#[derive(Resource, Deref, DerefMut)]
+struct CursorPosition(Vec2);
+
 pub fn camera_setup(mut commands: Commands) {
+    commands.insert_resource(CursorPosition(Vec2::default()));
     commands.spawn(Camera2dBundle::default());
 }
 
 fn camera_grab_system(
-    mut cameras: Query<(&mut Transform, &mut OrthographicProjection)>,
+    mut cameras: Query<(&mut Transform, &mut OrthographicProjection), With<Camera>>,
     btn: Res<Input<MouseButton>>,
-    mut motion_evr: EventReader<MouseMotion>,
     mut scroll_evr: EventReader<MouseWheel>,
+    mut cursor_evr: EventReader<CursorMoved>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut cursor_pos: ResMut<CursorPosition>
 ) {
-    let (mut cam_transform, mut projection) = cameras.single_mut();
+    if btn.just_pressed(MouseButton::Left) {
+        if let Some(pos) = windows.single().cursor_position() {
+            **cursor_pos = pos;
+        }
+    }
 
-    if btn.pressed(MouseButton::Left) && !motion_evr.is_empty() {
-        let mouse_translation: Vec2 = motion_evr.iter().map(|ev| ev.delta).sum();
-        cam_transform.translation += Vec3::new(-mouse_translation.x, mouse_translation.y, 0.) * projection.scale / 16.;
+    if btn.pressed(MouseButton::Left) && !cursor_evr.is_empty() {
+        for ev in cursor_evr.iter() {
+            let delta = ev.position - **cursor_pos;
+            **cursor_pos = ev.position;
+            for (mut cam_transform, projection) in cameras.iter_mut() {
+                cam_transform.translation = cam_transform.translation + Vec3::new(-delta.x, delta.y, 0.) * projection.scale;
+            }
+        }
     }
 
     if !scroll_evr.is_empty() {
@@ -34,6 +48,8 @@ fn camera_grab_system(
                 MouseScrollUnit::Pixel => -ev.y / 16.,
             })
             .sum();
-        projection.scale *= f32::powf(1.1, scroll_distance);
+        for (_, mut projection) in cameras.iter_mut() {
+            projection.scale *= f32::powf(1.1, scroll_distance);            
+        }
     }
 }

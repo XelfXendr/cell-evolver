@@ -1,6 +1,8 @@
 mod game_logic;
 mod communication;
 
+use bevy::render::render_resource::FilterMode;
+use bevy::render::render_resource::SamplerDescriptor;
 use communication::client::ClientPlugin;
 use game_logic::camera_controll::*;
 use game_logic::sprites::*;
@@ -20,6 +22,12 @@ fn main() {
                     ..default()
                 }),
                 ..default()
+            }).set(ImagePlugin {
+                default_sampler: SamplerDescriptor {
+                    mag_filter: FilterMode::Nearest,
+                    min_filter: FilterMode::Nearest,
+                    ..default()
+                },
             }),
             RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0),
             RapierDebugRenderPlugin::default(),

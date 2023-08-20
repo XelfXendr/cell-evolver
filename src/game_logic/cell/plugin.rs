@@ -405,14 +405,17 @@ pub fn food_spawning(
     }
 }
 
+#[inline]
 pub fn sigmoid(x: f32) -> f32 {
     1. / (1. + E.powf(-x))
 }
 
+#[inline]
 pub fn sigmoid_inplace(x: &mut f32) {
     *x = sigmoid(*x);
 }
 
+#[inline]
 pub fn tanh_inplace(x: &mut f32) {
     *x = f32::tanh(*x);
 }
