@@ -3,7 +3,7 @@ pub struct CamControllPlugin;
 impl Plugin for CamControllPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(ClearColor(Color::hex("0f0f0f").unwrap()))
+            .insert_resource(ClearColor(Color::hex("202022").unwrap()))
             .add_systems(Startup, camera_setup)
             .add_systems(Update, camera_grab_system);
     }

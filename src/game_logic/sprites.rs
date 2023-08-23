@@ -13,6 +13,7 @@ impl Plugin for SpritesPlugin {
             .init_resource::<EyeSprite>()
             .init_resource::<FlagellumSprite>()
             .init_resource::<FoodSprites>()
+            .init_resource::<LightSprite>()
             .add_systems(Update, (
                 animate_sprite,
                 flagellum_animation_speed,
@@ -26,10 +27,20 @@ impl Plugin for SpritesPlugin {
 }
 
 #[derive(Resource, Deref, DerefMut)]
+pub struct CellSprite(pub Handle<Image>);
+impl FromWorld for CellSprite {
+    fn from_world(world: &mut World) -> Self {
+        Self(
+            world.resource::<AssetServer>().load("sprites/cell_parts/cell.png")
+        )
+    }
+}
+
+#[derive(Resource, Deref, DerefMut)]
 pub struct EyeSprite(pub Handle<TextureAtlas>);
 impl FromWorld for EyeSprite {
     fn from_world(world: &mut World) -> Self {
-        EyeSprite({
+        Self({
             let eye_texture: Handle<Image> = world.resource::<AssetServer>().load("sprites/cell_parts/eye.png");
             let eye_atlas = TextureAtlas::from_grid(eye_texture, Vec2::new(32.,32.), 8, 1, None, None);
             world.resource_mut::<Assets<TextureAtlas>>().add(eye_atlas)
@@ -40,7 +51,7 @@ impl FromWorld for EyeSprite {
 pub struct FlagellumSprite(pub Handle<TextureAtlas>);
 impl FromWorld for FlagellumSprite {
     fn from_world(world: &mut World) -> Self {
-        FlagellumSprite({
+        Self({
             let flagellum_texture: Handle<Image> = world.resource::<AssetServer>().load("sprites/cell_parts/flagella.png");
             let flagellum_atlas = TextureAtlas::from_grid(flagellum_texture, Vec2::new(88.,110.), 8, 1, None, None);
             world.resource_mut::<Assets<TextureAtlas>>().add(flagellum_atlas)
@@ -53,8 +64,18 @@ pub struct FoodSprites(pub Vec<Handle<Image>>);
 impl FromWorld for FoodSprites {
     fn from_world(world: &mut World) -> Self {
         let asset_server = world.resource::<AssetServer>();
-        FoodSprites(
+        Self(
             (1..14).map(|n| asset_server.load(format!("sprites/food/{:0>2}.png", n))).collect()
+        )
+    }
+}
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct LightSprite(pub Handle<Image>);
+impl FromWorld for LightSprite {
+    fn from_world(world: &mut World) -> Self {
+        Self(
+            world.resource::<AssetServer>().load("sprites/lights/normal_light.png")
         )
     }
 }
@@ -73,16 +94,6 @@ pub struct AnimationIndices {
 
 #[derive(Component, Deref, DerefMut)]
 pub struct AnimationTimer(pub Timer);
-
-#[derive(Resource, Deref, DerefMut)]
-pub struct CellSprite(pub Handle<Image>);
-impl FromWorld for CellSprite {
-    fn from_world(world: &mut World) -> Self {
-        CellSprite(
-            world.resource::<AssetServer>().load("sprites/cell_parts/cell.png")
-        )
-    }
-}
 
 
 fn animate_sprite(
@@ -133,6 +144,7 @@ pub fn cell_sprite_adder(
     mut commands: Commands,
     new_cell_query: Query<Entity, Added<Cell>>,
     cell_sprite: Res<CellSprite>,
+    light_sprite: Res<LightSprite>,
 ) {
     for cell_entity in new_cell_query.iter() {
         if let Some(mut entity) = commands.get_entity(cell_entity) {
@@ -144,7 +156,19 @@ pub fn cell_sprite_adder(
                 },
                 ..default()
             }).id();
+
             entity.add_child(sprite);
+            let light_sprite = entity.commands().spawn(SpriteBundle {
+                texture: light_sprite.clone(),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(1000.,1000.)),
+                    color: Color::rgba_u8(100,200,255,50),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
+                ..default()
+            }).id();
+            entity.add_child(light_sprite);
         }
     }
 }
@@ -205,6 +229,7 @@ pub fn food_sprite_adder(
     mut commands: Commands,
     new_food_query: Query<Entity, Added<Food>>,
     food_sprites: Res<FoodSprites>,
+    light_sprite: Res<LightSprite>,
 ) {
     for food_entity in new_food_query.iter() {
         if let Some(mut entity) = commands.get_entity(food_entity) {
@@ -218,6 +243,18 @@ pub fn food_sprite_adder(
                 ..default()
             }).id();
             entity.add_child(sprite);
+
+            let light_sprite = entity.commands().spawn(SpriteBundle {
+                texture: light_sprite.clone(),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(200.,200.)),
+                    color: Color::rgba_u8(255,150,0,100),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
+                ..default()
+            }).id();
+            entity.add_child(light_sprite);
         }
     }
 }

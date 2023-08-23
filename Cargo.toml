@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.11" , features = ["dynamic_linking"] }
 bevy_app = "0.11"
+bevy_prototype_lyon = "0.9.0"
 bevy_quinnet = "0.5.0"
 bevy_rapier2d = { version = "0.22.0", features = [ "parallel"] }#, features = [ "parallel", "debug-render-2d"]}
 ndarray = "0.15.6"

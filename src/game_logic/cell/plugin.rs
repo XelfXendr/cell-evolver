@@ -1,4 +1,3 @@
-use std::f32::consts::E;
 use std::f32::consts::PI;
 use std::time::Duration;
 
@@ -10,8 +9,10 @@ use rand_distr::{Normal, Distribution};
 use rand;
 use ndarray::{Array1, Array2};
 use ndarray_rand::RandomExt;
+use bevy_prototype_lyon::prelude::*;
 
 use crate::game_logic::physics::*;
+use crate::game_logic::math::*;
 
 use super::*;
 
@@ -23,6 +24,9 @@ pub const MIN_ENERGY: f32 = 70.;
 
 pub const FIXED_DELTA: f32 = 1./60.;
 
+pub const MUTATION_RATE: f32 = 0.01;
+pub const WEIGHT_MUTATION_RATE: f32 = 0.1;
+
 pub struct CellCorePlugin;
 impl Plugin for CellCorePlugin {
     fn build(&self, app: &mut App) {
@@ -33,6 +37,7 @@ impl Plugin for CellCorePlugin {
             .add_event::<EyeSpawnEvent>()
             .add_event::<FoodSpawnEvent>()
             .add_event::<FoodDespawnEvent>()
+            .add_plugins(ShapePlugin)
             .add_systems(Startup, resource_init)
             .add_systems(Update, (
                 count_cells,
@@ -58,6 +63,7 @@ impl Plugin for CellPlugin {
                 cell_food_intersection,
                 eye_sensing,
                 cell_thinking,
+                update_flagellum.after(cell_thinking),
                 decrement_energy,
                 split_cells,
             ));  
@@ -195,6 +201,15 @@ pub fn spawn_eye(
     let vert = -position.cos() * 50.;
     let horiz = position.sin() * 50.;
 
+    let mut path_builder = PathBuilder::new();
+    path_builder.move_to(Vec2::new(-10., -5.));
+    path_builder.line_to(Vec2::new(10., -5.));
+    path_builder.line_to(Vec2::new(300., -1000.));
+    path_builder.line_to(Vec2::new(-300., -1000.));
+    path_builder.line_to(Vec2::new(-10., -5.));
+    path_builder.close();
+    let path = path_builder.build();
+
     let eye = commands.spawn((
         EyeBundle::new(0.),
         SpatialBundle::from_transform(
@@ -206,8 +221,18 @@ pub fn spawn_eye(
             Vec2::new(10., -5.), 
             Vec2::new(300., -1000.),
             Vec2::new(-300., -1000.), 
-            ]).unwrap(),
-    )).id();
+        ]).unwrap(),
+    )).with_children(|c| {
+        c.spawn((
+            ShapeBundle{
+                path: path,
+                transform: Transform::from_xyz(0., 0., -1.),
+                ..default()
+            },
+            Fill::color(Color::rgba_u8(255, 255, 255, 10)),
+        ));
+    }).id();
+
 
     eye_spawn_event_writer.send(EyeSpawnEvent(eye));
     eye
@@ -303,27 +328,37 @@ pub fn eye_sensing(
 
 pub fn cell_thinking(
     mut cell_query: Query<(&mut NeuronState, &NeuronWeights, &NeuronBiases, &mut ThinkingTimer, &CellEyes, &CellFlagella)>,
-    mut flag_query: Query<&mut Activation, With<Flagellum>>,
     eye_query: Query<&Activation, With<Eye>>,
 ) {
-    for (mut state, weights, biases, mut timer, eyes, flagella) in cell_query.iter_mut() {
-        timer.tick(Duration::from_secs_f32(FIXED_DELTA));
-        if timer.finished() {
-            let activations: Vec<f32> = eyes.iter().map(|eye| **eye_query.get(*eye).unwrap()).collect();
-            for (i, act) in activations.iter().enumerate() {
-                state[i] = *act;
+    cell_query.par_iter_mut()
+        .batching_strategy(BatchingStrategy::new().min_batch_size(100))
+        .for_each_mut(|(mut state, weights, biases, mut timer, eyes, flagella)| {
+            timer.tick(Duration::from_secs_f32(FIXED_DELTA));
+            if timer.finished() {
+                //update eye neuron state from what eyes see
+                let activations: Vec<f32> = eyes.iter().map(|eye| **eye_query.get(*eye).unwrap()).collect();
+                for (i, act) in activations.iter().enumerate() {
+                    state[i] = *act;
+                }
+                
+                //compute state update
+                **state = state.dot(&**weights) + &**biases;
+                let activation_range = s![eyes.len()..state.shape()[0]-flagella.len()];
+                state.slice_mut(activation_range).map_inplace(tanh_inplace);
+                let activation_range = s![state.shape()[0]-flagella.len()..];
+                state.slice_mut(activation_range).map_inplace(sigmoid_inplace);
             }
-            
-            **state = state.dot(&**weights) + &**biases;
-            let activation_range = s![flagella.len()..state.shape()[0]-eyes.len()];
-            state.slice_mut(activation_range).map_inplace(tanh_inplace);
-            let activation_range = s![state.shape()[0]-eyes.len()..];
-            state.slice_mut(activation_range).map_inplace(sigmoid_inplace);
-            
-            for (f, a) in flagella.iter().zip(state.slice(activation_range)) {
-                let mut activation = flag_query.get_mut(*f).unwrap();
-                **activation = *a;
-            }
+        });
+}
+
+pub fn update_flagellum(
+    state_query: Query<(&NeuronState, &CellFlagella)>,
+    mut flag_query: Query<&mut Activation, With<Flagellum>>,
+) {
+    for (state, flagella) in state_query.iter() {
+        for (f, a) in flagella.iter().zip(state.slice(s![state.shape()[0]-flagella.len()..])) {
+            let mut activation = flag_query.get_mut(*f).unwrap();
+            **activation = *a;
         }
     }
 }
@@ -357,8 +392,8 @@ pub fn split_cells(
         let rotation = cell_transform.rotation;
         let (weights, biases, state) = (&**weights, &**biases, &**state);
         
-        let normal = Normal::new(0., 0.01).unwrap();
-        let weight_normal = Normal::new(0., 0.1).unwrap();
+        let normal = Normal::new(0., MUTATION_RATE).unwrap();
+        let weight_normal = Normal::new(0., WEIGHT_MUTATION_RATE).unwrap();
         let mut rng = rand::thread_rng();
 
         despawn_cell(&mut despawn_queue, &mut cell_despawn_event_writer, cell_entity);
@@ -403,21 +438,6 @@ pub fn food_spawning(
             Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.)
         );
     }
-}
-
-#[inline]
-pub fn sigmoid(x: f32) -> f32 {
-    1. / (1. + E.powf(-x))
-}
-
-#[inline]
-pub fn sigmoid_inplace(x: &mut f32) {
-    *x = sigmoid(*x);
-}
-
-#[inline]
-pub fn tanh_inplace(x: &mut f32) {
-    *x = f32::tanh(*x);
 }
 
 pub fn count_cells(cell_query: Query<&Cell>, food_query: Query<&Food>, mut timer: ResMut<DebugTimer>, time: Res<Time>) {
