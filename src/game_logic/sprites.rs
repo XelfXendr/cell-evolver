@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use bevy::{prelude::*, sprite::Anchor};
-use rand::Rng;
 
 use super::cell::*;
 
@@ -12,7 +11,7 @@ impl Plugin for SpritesPlugin {
             .init_resource::<CellSprite>()
             .init_resource::<EyeSprite>()
             .init_resource::<FlagellumSprite>()
-            .init_resource::<FoodSprites>()
+            .init_resource::<FoodSprite>()
             .init_resource::<LightSprite>()
             .add_systems(Update, (
                 animate_sprite,
@@ -60,12 +59,11 @@ impl FromWorld for FlagellumSprite {
 }
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct FoodSprites(pub Vec<Handle<Image>>);
-impl FromWorld for FoodSprites {
+pub struct FoodSprite(pub Handle<Image>);
+impl FromWorld for FoodSprite {
     fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
         Self(
-            (1..14).map(|n| asset_server.load(format!("sprites/food/{:0>2}.png", n))).collect()
+            world.resource::<AssetServer>().load("sprites/food/food.png")
         )
     }
 }
@@ -152,6 +150,7 @@ pub fn cell_sprite_adder(
                 texture: cell_sprite.clone(),
                 sprite: Sprite{
                     custom_size: Some(Vec2::new(100., 100.)),
+                    color: Color::hex("8db5fb").unwrap(),
                     ..default()
                 },
                 ..default()
@@ -228,14 +227,13 @@ pub fn eye_sprite_adder(
 pub fn food_sprite_adder(
     mut commands: Commands,
     new_food_query: Query<Entity, Added<Food>>,
-    food_sprites: Res<FoodSprites>,
+    food_sprite: Res<FoodSprite>,
     light_sprite: Res<LightSprite>,
 ) {
     for food_entity in new_food_query.iter() {
         if let Some(mut entity) = commands.get_entity(food_entity) {
-            let rand_index = rand::thread_rng().gen_range(0..food_sprites.len());
             let sprite = entity.commands().spawn(SpriteBundle{
-                texture: food_sprites[rand_index].clone(),
+                texture: food_sprite.0.clone(),
                 sprite: Sprite{
                     custom_size: Some(Vec2::new(20., 20.)),
                     ..default()
@@ -248,7 +246,7 @@ pub fn food_sprite_adder(
                 texture: light_sprite.clone(),
                 sprite: Sprite {
                     custom_size: Some(Vec2::new(200.,200.)),
-                    color: Color::rgba_u8(255,150,0,100),
+                    color: Color::rgba_u8(150,255,150,100),
                     ..default()
                 },
                 transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
