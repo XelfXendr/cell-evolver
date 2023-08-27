@@ -1,9 +1,9 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::Anchor};
 use bevy_prototype_lyon::prelude::*;
 use bevy_rapier2d::prelude::*;
 use ndarray::{Array2, Array1};
 
-use crate::game_logic::physics::*;
+use crate::game_logic::{physics::*, sprites::*};
 use super::*;
 
 pub fn spawn_cell(
@@ -19,12 +19,16 @@ pub fn spawn_cell(
     weights: Array2<f32>,
     biases: Array1<f32>,
     state: Array1<f32>,
+    cell_sprite: Option<&CellSprite>,
+    light_sprite: Option<&LightSprite>,
+    flagellum_sprite: Option<&FlagellumSprite>,
+    eye_sprite: Option<&EyeSprite>,
 ) -> Entity {
     let flagella: Vec<Entity> = flagella_params.iter().map(
-        |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang)
+        |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang, flagellum_sprite)
     ).collect();
     let eyes: Vec<Entity> = eye_params.iter().map(
-        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos)
+        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, eye_sprite)
     ).collect(); 
 
     let cell = commands.spawn((
@@ -43,7 +47,31 @@ pub fn spawn_cell(
         ),
         Collider::ball(50.),
         ThinkingTimer(Timer::from_seconds(1./20., TimerMode::Repeating)),
-    )).id();
+    )).with_children(|c| {
+        if let Some(sprite) = cell_sprite {
+            c.spawn(SpriteBundle {
+                texture: sprite.0.clone(),
+                sprite: Sprite{
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    color: Color::hex("8db5fb").unwrap(),
+                    ..default()
+                },
+                ..default()
+            });
+        }
+        if let Some(sprite) = light_sprite {
+            c.spawn(SpriteBundle {
+                texture: sprite.0.clone(),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(1000.,1000.)),
+                    color: Color::rgba_u8(100,200,255,50),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
+                ..default()
+            });
+        }
+    }).id();
 
     commands.entity(cell).push_children(&flagella);
     commands.entity(cell).push_children(&eyes);
@@ -56,6 +84,7 @@ pub fn spawn_flagellum(
     flagellum_spawn_event_writer: &mut EventWriter<FlagellumSpawnEvent>,
     position: f32,
     angle: f32,
+    flagellum_sprite: Option<&FlagellumSprite>,
 ) -> Entity{
     let vert = -position.cos() * 50.;
     let horiz = position.sin() * 50.;
@@ -66,7 +95,25 @@ pub fn spawn_flagellum(
             Transform::from_rotation(Quat::from_rotation_z(position + angle))
                 .with_translation(Vec3::new(horiz, vert, 2.))
         ),
-    )).id();
+    )).with_children(|c| {
+        if let Some(sprite) = flagellum_sprite {
+            c.spawn((
+                FlagellumSpriteTag,
+                SpriteSheetBundle {
+                    texture_atlas: sprite.0.clone(),
+                    sprite: {
+                        let mut flagella_sprite = TextureAtlasSprite::new(0);
+                        flagella_sprite.anchor = Anchor::Custom(Vec2::new(0., 0.46));
+                        flagella_sprite.custom_size = Some(Vec2::new(50.,50./88.*110.));
+                        flagella_sprite
+                    },
+                    ..default()
+                },
+                AnimationIndices {first: 0, last: 7},
+                AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+            ));
+        }
+    }).id();
 
     flagellum_spawn_event_writer.send(FlagellumSpawnEvent(flagellum));
     flagellum
@@ -76,19 +123,11 @@ pub fn spawn_eye(
     commands: & mut Commands,
     eye_spawn_event_writer: &mut EventWriter<EyeSpawnEvent>,
     position: f32,
+    eye_sprite: Option<&EyeSprite>,
 ) -> Entity{
     let vert = -position.cos() * 50.;
     let horiz = position.sin() * 50.;
-
-    let mut path_builder = PathBuilder::new();
-    path_builder.move_to(Vec2::new(-10., -5.));
-    path_builder.line_to(Vec2::new(10., -5.));
-    path_builder.line_to(Vec2::new(300., -1000.));
-    path_builder.line_to(Vec2::new(-300., -1000.));
-    path_builder.line_to(Vec2::new(-10., -5.));
-    path_builder.close();
-    let path = path_builder.build();
-
+    
     let eye = commands.spawn((
         EyeBundle::new(0.),
         SpatialBundle::from_transform(
@@ -102,14 +141,37 @@ pub fn spawn_eye(
             Vec2::new(-300., -1000.), 
         ]).unwrap(),
     )).with_children(|c| {
-        c.spawn((
-            ShapeBundle{
-                path: path,
-                transform: Transform::from_xyz(0., 0., -1.),
-                ..default()
-            },
-            Fill::color(Color::rgba_u8(255, 255, 255, 10)),
-        ));
+        if let Some(sprite) = eye_sprite {
+            c.spawn((
+                EyeSpriteTag,
+                SpriteSheetBundle {
+                    texture_atlas: sprite.0.clone(),
+                    sprite: {
+                        let mut eye_sprite = TextureAtlasSprite::new(0);
+                        eye_sprite.custom_size = Some(Vec2::new(50./88.*32.,50./88.*32.));
+                        eye_sprite
+                    },
+                    ..default()
+                },
+                AnimationIndices {first: 0, last: 7},
+            ));
+            let mut path_builder = PathBuilder::new();
+            path_builder.move_to(Vec2::new(-10., -5.));
+            path_builder.line_to(Vec2::new(10., -5.));
+            path_builder.line_to(Vec2::new(300., -1000.));
+            path_builder.line_to(Vec2::new(-300., -1000.));
+            path_builder.line_to(Vec2::new(-10., -5.));
+            path_builder.close();
+            let path = path_builder.build();
+            c.spawn((
+                ShapeBundle{
+                    path: path,
+                    transform: Transform::from_xyz(0., 0., -1.),
+                    ..default()
+                },
+                Fill::color(Color::rgba_u8(255, 255, 255, 10)),
+            ));
+        }
     }).id();
 
 
@@ -130,12 +192,37 @@ pub fn spawn_food(
     commands: &mut Commands,
     food_spawn_event_writer: &mut EventWriter<FoodSpawnEvent>,
     position: Vec3,
+    food_sprite: Option<&FoodSprite>,
+    light_sprite: Option<&LightSprite>,
 ) -> Entity {
     let food = commands.spawn((
         FoodBundle::new(),
         SpatialBundle::from_transform(Transform::from_translation(position)),
         Collider::ball(10.),
-    )).id();
+    )).with_children(|c| {
+        if let Some(sprite) = food_sprite {
+            c.spawn(SpriteBundle{
+                texture: sprite.0.clone(),
+                sprite: Sprite{
+                    custom_size: Some(Vec2::new(20., 20.)),
+                    ..default()
+                },
+                ..default()
+            });
+        }
+        if let Some(sprite) = light_sprite {
+            c.spawn(SpriteBundle {
+                texture: sprite.0.clone(),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(200.,200.)),
+                    color: Color::rgba_u8(150,255,150,100),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
+                ..default()
+            });
+        }
+    }).id();
 
     food_spawn_event_writer.send(FoodSpawnEvent(food));
     food

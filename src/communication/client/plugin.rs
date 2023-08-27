@@ -11,7 +11,7 @@ use ndarray::{Array2, Array1};
 use crate::communication::shared::messages::{ServerMessage, EntityId, CellParams, CellState, Tick};
 use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell, DelayedDespawnQueue, Energy};
 use crate::game_logic::physics::{Velocity, Acceleration, AngularVelocity, AngularAcceleration};
-use crate::game_logic::sprites::{cell_sprite_adder, eye_sprite_adder, flagellum_sprite_adder, food_sprite_adder};
+use crate::game_logic::sprites::*;
 
 pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
@@ -20,11 +20,7 @@ impl Plugin for ClientPlugin {
             .add_plugins(QuinnetClientPlugin::default())
             .add_systems(Startup, init)
             .add_systems(Update, (
-                read_messages
-                    .before(cell_sprite_adder)
-                    .before(eye_sprite_adder)
-                    .before(flagellum_sprite_adder)
-                    .before(food_sprite_adder),
+                read_messages,
                 add_ticks_to_cells,
             ));
     }
@@ -73,7 +69,12 @@ fn read_messages(
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
-    mut cell_query: Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>
+    mut cell_query: Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>,
+    cell_sprite: Option<Res<CellSprite>>,
+    light_sprite: Option<Res<LightSprite>>,
+    flagellum_sprite: Option<Res<FlagellumSprite>>,
+    eye_sprite: Option<Res<EyeSprite>>,
+    food_sprite: Option<Res<FoodSprite>>,
 ) {
     let connection = client.connection_mut();
     while let Some(message) = connection.try_receive_message::<ServerMessage>() {
@@ -89,7 +90,11 @@ fn read_messages(
                 &mut cell_spawn_event_writer, 
                 &mut flagellum_spawn_event_writer, 
                 &mut eye_spawn_event_writer, 
-                entity, cell_params, cell_state
+                entity, cell_params, cell_state,
+                cell_sprite.as_deref(),
+                light_sprite.as_deref(),
+                flagellum_sprite.as_deref(),
+                eye_sprite.as_deref(),
             ),
             ServerMessage::CellDespawn(entity) => cell_despawn_handler(
                 &mut despawn_queue, 
@@ -101,7 +106,9 @@ fn read_messages(
                 &mut commands, 
                 &mut entity_map, 
                 &mut food_spawn_event_writer, 
-                entity, position
+                entity, position,
+                food_sprite.as_deref(),
+                light_sprite.as_deref(),
             ),
             ServerMessage::FoodDespawn(entity) => food_despawn_handler(
                 &mut despawn_queue, 
@@ -123,6 +130,10 @@ fn cell_spawn_handler(
     entity: EntityId,
     cell_params: CellParams,
     cell_state: CellState,
+    cell_sprite: Option<&CellSprite>,
+    light_sprite: Option<&LightSprite>,
+    flagellum_sprite: Option<&FlagellumSprite>,
+    eye_sprite: Option<&EyeSprite>,
 ) {
     if entity_map.contains_key(&entity) {
         return;
@@ -140,6 +151,10 @@ fn cell_spawn_handler(
             Array2::default((0,0)),
             Array1::default(0),
             Array1::default(0),
+            cell_sprite,
+            light_sprite,
+            flagellum_sprite,
+            eye_sprite,
         )
     );
 }
@@ -161,6 +176,8 @@ fn food_spawn_handler(
     food_spawn_event_writer: &mut EventWriter<FoodSpawnEvent>,
     entity: EntityId,
     position: Vec2,
+    food_sprite: Option<&FoodSprite>,
+    light_sprite: Option<&LightSprite>,
 ) {
     if entity_map.contains_key(&entity) {
         return;
@@ -170,6 +187,8 @@ fn food_spawn_handler(
             commands, 
             food_spawn_event_writer, 
             position.extend(0.),
+            food_sprite,
+            light_sprite,
         )
     );
 }

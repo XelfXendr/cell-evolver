@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::{prelude::*, sprite::Anchor};
+use bevy::prelude::*;
 
 use super::cell::*;
 
@@ -17,10 +17,6 @@ impl Plugin for SpritesPlugin {
                 animate_sprite,
                 flagellum_animation_speed,
                 eye_focus_animation,
-                cell_sprite_adder,
-                flagellum_sprite_adder,
-                eye_sprite_adder,
-                food_sprite_adder,
             ));
     }
 }
@@ -134,125 +130,6 @@ pub fn eye_focus_animation(
     for (parent, indices, mut sprite) in sprite_query.iter_mut() {
         if let Ok(activation) = eye_query.get(parent.get()) {
             sprite.index = (((indices.last as f32) * **activation).ceil() as usize).max(indices.first).min(indices.last);
-        }
-    }
-}
-
-pub fn cell_sprite_adder(
-    mut commands: Commands,
-    new_cell_query: Query<Entity, Added<Cell>>,
-    cell_sprite: Res<CellSprite>,
-    light_sprite: Res<LightSprite>,
-) {
-    for cell_entity in new_cell_query.iter() {
-        if let Some(mut entity) = commands.get_entity(cell_entity) {
-            let sprite = entity.commands().spawn(SpriteBundle {
-                texture: cell_sprite.clone(),
-                sprite: Sprite{
-                    custom_size: Some(Vec2::new(100., 100.)),
-                    color: Color::hex("8db5fb").unwrap(),
-                    ..default()
-                },
-                ..default()
-            }).id();
-
-            entity.add_child(sprite);
-            let light_sprite = entity.commands().spawn(SpriteBundle {
-                texture: light_sprite.clone(),
-                sprite: Sprite {
-                    custom_size: Some(Vec2::new(1000.,1000.)),
-                    color: Color::rgba_u8(100,200,255,50),
-                    ..default()
-                },
-                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
-                ..default()
-            }).id();
-            entity.add_child(light_sprite);
-        }
-    }
-}
-
-pub fn flagellum_sprite_adder(
-    mut commands: Commands,
-    new_flagellum_query: Query<Entity, Added<Flagellum>>,
-    flagellum_sprite: Res<FlagellumSprite>,
-) {
-    for flagellum_entity in new_flagellum_query.iter() {
-        if let Some(mut entity) = commands.get_entity(flagellum_entity) {
-            let sprite = entity.commands().spawn((
-                FlagellumSpriteTag,
-                SpriteSheetBundle {
-                    texture_atlas: flagellum_sprite.clone(),
-                    sprite: {
-                        let mut flagella_sprite = TextureAtlasSprite::new(0);
-                        flagella_sprite.anchor = Anchor::Custom(Vec2::new(0., 0.46));
-                        flagella_sprite.custom_size = Some(Vec2::new(50.,50./88.*110.));
-                        flagella_sprite
-                    },
-                    ..default()
-                },
-                AnimationIndices {first: 0, last: 7},
-                AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-            )).id();
-            entity.add_child(sprite);
-        }
-    }
-}
-
-pub fn eye_sprite_adder(
-    mut commands: Commands,
-    new_eye_query: Query<Entity, Added<Eye>>,
-    eye_sprite: Res<EyeSprite>,
-) {
-    for eye_entity in new_eye_query.iter() {
-        if let Some(mut entity) = commands.get_entity(eye_entity) {
-            let sprite = entity.commands().spawn((
-                EyeSpriteTag,
-                SpriteSheetBundle {
-                    texture_atlas: eye_sprite.clone(),
-                    sprite: {
-                        let mut eye_sprite = TextureAtlasSprite::new(0);
-                        eye_sprite.custom_size = Some(Vec2::new(50./88.*32.,50./88.*32.));
-                        eye_sprite
-                    },
-                    ..default()
-                },
-                AnimationIndices {first: 0, last: 7},
-            )).id();
-            entity.add_child(sprite);
-        }
-    }
-}
-
-pub fn food_sprite_adder(
-    mut commands: Commands,
-    new_food_query: Query<Entity, Added<Food>>,
-    food_sprite: Res<FoodSprite>,
-    light_sprite: Res<LightSprite>,
-) {
-    for food_entity in new_food_query.iter() {
-        if let Some(mut entity) = commands.get_entity(food_entity) {
-            let sprite = entity.commands().spawn(SpriteBundle{
-                texture: food_sprite.0.clone(),
-                sprite: Sprite{
-                    custom_size: Some(Vec2::new(20., 20.)),
-                    ..default()
-                },
-                ..default()
-            }).id();
-            entity.add_child(sprite);
-
-            let light_sprite = entity.commands().spawn(SpriteBundle {
-                texture: light_sprite.clone(),
-                sprite: Sprite {
-                    custom_size: Some(Vec2::new(200.,200.)),
-                    color: Color::rgba_u8(150,255,150,100),
-                    ..default()
-                },
-                transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
-                ..default()
-            }).id();
-            entity.add_child(light_sprite);
         }
     }
 }

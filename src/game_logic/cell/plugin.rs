@@ -13,6 +13,7 @@ use bevy_prototype_lyon::prelude::*;
 
 use crate::game_logic::physics::*;
 use crate::game_logic::math::*;
+use crate::game_logic::sprites::*;
 
 use super::*;
 
@@ -37,7 +38,6 @@ impl Plugin for CellCorePlugin {
             .add_event::<EyeSpawnEvent>()
             .add_event::<FoodSpawnEvent>()
             .add_event::<FoodDespawnEvent>()
-            .add_plugins(ShapePlugin)
             .add_systems(Startup, resource_init)
             .add_systems(Update, (
                 count_cells,
@@ -50,11 +50,10 @@ impl Plugin for CellCorePlugin {
     }
 }
 
-pub struct CellPlugin;
-impl Plugin for CellPlugin {
+pub struct CellServerPlugin;
+impl Plugin for CellServerPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(CellCorePlugin)
             .add_systems(Startup, (
                 cell_setup,
             ))
@@ -67,6 +66,14 @@ impl Plugin for CellPlugin {
                 decrement_energy,
                 split_cells,
             ));  
+    }
+}
+
+pub struct CellClientPlugin;
+impl Plugin for CellClientPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_plugins(ShapePlugin);  
     }
 }
 
@@ -90,6 +97,11 @@ pub fn cell_setup(
     mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
+    food_sprite: Option<Res<FoodSprite>>,
+    light_sprite: Option<Res<LightSprite>>,
+    cell_sprite: Option<Res<CellSprite>>,
+    flagellum_sprite: Option<Res<FlagellumSprite>>,
+    eye_sprite: Option<Res<EyeSprite>>,
 ) {
     let normal = Normal::new(0., 10000.).unwrap();
     let mut rng = rand::thread_rng();
@@ -106,6 +118,10 @@ pub fn cell_setup(
             Array2::random((100,100), Normal::new(0., 0.5).unwrap()),
             Array1::random(100, Normal::new(0., 0.5).unwrap()),
             Array1::random(100, Normal::new(0., 0.5).unwrap()),
+            cell_sprite.as_deref(),
+            light_sprite.as_deref(),
+            flagellum_sprite.as_deref(),
+            eye_sprite.as_deref(),
         );
     }
     
@@ -113,7 +129,9 @@ pub fn cell_setup(
         spawn_food(
             &mut commands, 
             &mut food_spawn_event_writer,
-            Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.)
+            Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.),
+            food_sprite.as_deref(),
+            light_sprite.as_deref(),
         );
     }
 }
@@ -238,6 +256,10 @@ pub fn split_cells(
     mut flagellum_spawn_event_writer: EventWriter<FlagellumSpawnEvent>,
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut cell_query: Query<(Entity, &mut Dead, &Energy, &NeuronWeights, &NeuronBiases, &NeuronState, &FlagellaParams, &EyeParams, &Transform), With<Cell>>,
+    cell_sprite: Option<Res<CellSprite>>,
+    light_sprite: Option<Res<LightSprite>>,
+    flagellum_sprite: Option<Res<FlagellumSprite>>,
+    eye_sprite: Option<Res<EyeSprite>>,
 ) {
     for (cell_entity, mut dead, _, weights, biases, state, flagella_params, eye_params, cell_transform) in cell_query.iter_mut().filter(|(_, dead, energy, _, _, _, _, _, _)| ***energy >= SPLIT_ENERGY && !***dead) {
         **dead = true;
@@ -261,6 +283,10 @@ pub fn split_cells(
             weights.map(|x| x + weight_normal.sample(&mut rng)),
             biases.map(|x| x + weight_normal.sample(&mut rng)),
             state.clone(),
+            cell_sprite.as_deref(),
+            light_sprite.as_deref(),
+            flagellum_sprite.as_deref(),
+            eye_sprite.as_deref(),
             );
         spawn_cell(&mut commands, 
             &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
@@ -272,6 +298,10 @@ pub fn split_cells(
             weights.map(|x| x + weight_normal.sample(&mut rng)),
             biases.map(|x| x + weight_normal.sample(&mut rng)),
             state.clone(),
+            cell_sprite.as_deref(),
+            light_sprite.as_deref(),
+            flagellum_sprite.as_deref(),
+            eye_sprite.as_deref(),
         );
     }
 }
@@ -280,6 +310,8 @@ pub fn food_spawning(
     mut commands: Commands,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
     mut timer: ResMut<FoodTimer>,
+    food_sprite: Option<Res<FoodSprite>>,
+    light_sprite: Option<Res<LightSprite>>,
 ) {
     timer.tick(Duration::from_secs_f32(FIXED_DELTA));
     for _ in 0..timer.times_finished_this_tick() {
@@ -289,7 +321,9 @@ pub fn food_spawning(
         spawn_food(
             &mut commands, 
             &mut food_spawn_event_writer,
-            Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.)
+            Vec3::new(normal.sample(&mut rng), normal.sample(&mut rng), 0.),
+            food_sprite.as_deref(),
+            light_sprite.as_deref(),
         );
     }
 }

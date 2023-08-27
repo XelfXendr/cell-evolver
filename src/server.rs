@@ -18,7 +18,8 @@ fn main() {
             MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(1./60.))),
             LogPlugin::default(),
             RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0),
-            CellPlugin,
+            CellCorePlugin,
+            CellServerPlugin,
             PhysicsPlugin,
             ServerPlugin,
         ))    
