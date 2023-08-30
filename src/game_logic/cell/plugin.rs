@@ -1,4 +1,6 @@
 use std::f32::consts::PI;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use bevy::ecs::query::BatchingStrategy;
@@ -11,13 +13,12 @@ use ndarray::{Array1, Array2};
 use ndarray_rand::RandomExt;
 use bevy_prototype_lyon::prelude::*;
 
-use crate::game_logic::physics::*;
 use crate::game_logic::math::*;
 use crate::game_logic::sprites::*;
 
 use super::*;
 
-pub const SPLIT_ENERGY: f32 = 500.;
+pub const SPLIT_ENERGY: f32 = 200.;
 pub const MIN_ENERGY: f32 = 50.;
 
 pub const FIXED_DELTA: f32 = 1./60.;
@@ -59,6 +60,7 @@ impl Plugin for CellServerPlugin {
                 food_spawning,
                 cell_food_intersection.before(update_radius),
                 eye_sensing,
+                kill_intersections.before(eye_sensing),
                 cell_thinking,
                 update_flagellum.after(cell_thinking),
                 decrement_energy.before(update_radius),
@@ -166,36 +168,93 @@ pub fn cell_food_intersection(
     }
 }
 
+#[derive(Component)]
+pub struct Intersection;
+
 pub fn eye_sensing(
-    mut eye_query: Query<(&mut Activation, &GlobalTransform, &Collider), With<Eye>>,
-    food_query: Query<&GlobalTransform, With<Food>>,
+    mut eye_query: Query<(&Parent, &mut Activation, &GlobalTransform, &Collider, &ViewParams), With<Eye>>,
+    food_query: Query<&Transform, With<Food>>,
+    collider_query: Query<&Parent, With<CellColliderTag>>,
+    cell_query: Query<(&Transform, &Radius), With<Cell>>,
     rapier_context: Res<RapierContext>,
+    sprite: Option<Res<CellSprite>>,
+    mut commands: Commands,
 ) {
+    let new_points: Arc<Mutex<Vec<Vec2>>> = Arc::default(); 
     eye_query
         .par_iter_mut()
         .batching_strategy(BatchingStrategy::new().min_batch_size(32))
-        .for_each_mut(|(mut eye_activation, eye_transform, collider)| {
+        .for_each_mut(|(parent, mut eye_activation, eye_transform, collider, view_params)| {
+            let mut activation: f32 = 0.;
+            let direction = quat_to_direction(eye_transform.to_scale_rotation_translation().1);
+            let angle = (-direction.x).atan2(direction.y);
 
-        let mut activation: f32 = 0.;
-        let direction = quat_to_direction(eye_transform.to_scale_rotation_translation().1);
-        let angle = (-direction.x).atan2(direction.y);
-        let pos = eye_transform.translation();
-        rapier_context.intersections_with_shape(
-            Vec2::new(pos.x, pos.y), 
-            angle, 
-            collider, 
-            QueryFilter::default(), 
-            |x| {
-                if let Ok(food_transform) = food_query.get(x) {
-                    let distance = eye_transform.translation().distance(food_transform.translation());
-                    activation = activation.max((1.-distance/1000.).max(0.).min(1.));
+            let m = Vec2::new(
+                view_params.m_normal.x*direction.y + view_params.m_normal.y*direction.x, 
+                - view_params.m_normal.x*direction.x + view_params.m_normal.y*direction.y
+            );
+            let n = Vec2::new(
+                view_params.n_normal.x*direction.y + view_params.n_normal.y*direction.x, 
+                - view_params.n_normal.x*direction.x + view_params.n_normal.y*direction.y
+            );
+
+            rapier_context.intersections_with_shape(
+                eye_transform.translation().truncate(), 
+                angle, 
+                collider, 
+                QueryFilter::default(), 
+                |x| {
+                    if let Ok(food_transform) = food_query.get(x) {
+                        let center = food_transform.translation.truncate() - eye_transform.translation().truncate();
+                        if let Some(point) = nearest_intersection(center, 5., m, n) {
+                            new_points.lock().unwrap().push(point + eye_transform.translation().truncate());
+                            activation = activation.max((1.-point.length()/view_params.range).max(0.).min(1.));
+                        } 
+                    }
+                    if let Ok(cell) = collider_query.get(x) {
+                        if parent.get() == cell.get() {
+                            return true;
+                        }
+                        if let Ok((cell_transform, radius)) = cell_query.get(cell.get()) {
+                            let center = cell_transform.translation.truncate() - eye_transform.translation().truncate();
+                            if let Some(point) = nearest_intersection(center, **radius, m, n) {
+                                new_points.lock().unwrap().push(point + eye_transform.translation().truncate());
+                                activation = activation.max((1.-point.length()/view_params.range).max(0.).min(1.));
+                            } 
+                        }
+                    }
+                    true
                 }
-                true
-            }
-        );
+            );
 
-        **eye_activation = activation;
+            **eye_activation = activation;
     });
+    if let Some(sprite) = sprite {
+        for point in new_points.lock().unwrap().iter() {
+            commands.spawn((
+                Intersection,
+                SpriteBundle {
+                    sprite: Sprite  {
+                        custom_size: Some(Vec2::new(10.,10.)),
+                        color: Color::rgb_u8(255, 255, 0),
+                        ..default()
+                    },
+                    transform: Transform::from_translation(point.extend(5.)),
+                    texture: sprite.clone(),
+                    ..default()
+                }
+            ));
+        }
+    }
+}
+
+pub fn kill_intersections(
+    mut commands: Commands,
+    query: Query<Entity, With<Intersection>>,
+) {
+    for e in query.iter() {
+        commands.entity(e).despawn_recursive();
+    }
 }
 
 pub fn cell_thinking(

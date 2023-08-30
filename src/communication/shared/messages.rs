@@ -3,7 +3,8 @@ use serde::{Serialize, Deserialize};
 
 use crate::game_logic::{
     cell::{Energy, FlagellaParams, EyeParams}, 
-    physics::{quat_to_direction, Force, AngularVelocity, AngularForce, Velocity}
+    physics::{Force, AngularVelocity, AngularForce, Velocity}, 
+    math::quat_to_direction
 };
 
 #[derive(Serialize, Deserialize, Deref, DerefMut, Eq, PartialEq, Hash, Clone, Copy)]

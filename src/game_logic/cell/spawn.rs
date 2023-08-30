@@ -33,6 +33,7 @@ pub fn spawn_cell(
         |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, radius, eye_sprite)
     ).collect(); 
     let collider = commands.spawn((
+        CellColliderTag,
         SpatialBundle::default(),
         Collider::ball(radius),
     )).id();
@@ -133,22 +134,26 @@ pub fn spawn_eye(
     position: f32,
     radius: f32,
     eye_sprite: Option<&EyeSprite>,
-) -> Entity{
-    let vert = -position.cos() * radius;
-    let horiz = position.sin() * radius;
-    
+) -> Entity{    
+    let fov = f32::to_radians(35.);
+    let range = 1000.;
+
+    let cos = f32::cos(fov/2.);
+    let sin = f32::sin(fov/2.);
+
+    let path = [
+        Vec2::ZERO,
+        Vec2::new(sin*range, -cos*range),
+        Vec2::new(-sin*range, -cos*range),
+    ];
+
     let eye = commands.spawn((
-        EyeBundle::new(0.),
-        SpatialBundle::from_transform(
-            Transform::from_rotation(Quat::from_rotation_z(position))
-                .with_translation(Vec3::new(horiz, vert, 2.))
+        EyeBundle::new(
+            position, radius, 
+            Vec2::new(-cos, -sin), Vec2::new(cos, -sin),
+            range,
+            &path
         ),
-        Collider::convex_polyline(vec![
-            Vec2::new(-10., -5.),
-            Vec2::new(10., -5.), 
-            Vec2::new(300., -1000.),
-            Vec2::new(-300., -1000.), 
-        ]).unwrap(),
     )).with_children(|c| {
         if let Some(sprite) = eye_sprite {
             c.spawn((
@@ -164,17 +169,18 @@ pub fn spawn_eye(
                 },
                 AnimationIndices {first: 0, last: 7},
             ));
-            let mut path_builder = PathBuilder::new();
-            path_builder.move_to(Vec2::new(-10., -5.));
-            path_builder.line_to(Vec2::new(10., -5.));
-            path_builder.line_to(Vec2::new(300., -1000.));
-            path_builder.line_to(Vec2::new(-300., -1000.));
-            path_builder.line_to(Vec2::new(-10., -5.));
-            path_builder.close();
-            let path = path_builder.build();
+
             c.spawn((
                 ShapeBundle{
-                    path: path,
+                    path: {
+                        let mut path_builder = PathBuilder::new();
+                        path_builder.move_to(*path.last().unwrap());
+                        for p in path {
+                            path_builder.line_to(p);
+                        }
+                        path_builder.close();
+                        path_builder.build()
+                    },
                     transform: Transform::from_xyz(0., 0., -1.),
                     ..default()
                 },

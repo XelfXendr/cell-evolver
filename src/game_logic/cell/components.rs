@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::Collider;
 use ndarray::{Array2, Array1};
 
 use crate::game_logic::physics::PhysicsBundle;
@@ -83,13 +84,30 @@ impl FlagellumBundle {
 #[derive(Bundle, Default)]
 pub struct EyeBundle {
     eye: Eye,
+    view_params: ViewParams,
     activation: Activation,
+    #[bundle()]
+    spatial_bundle: SpatialBundle,
+    collider: Collider,
 }
 impl EyeBundle {
-    pub fn new(activation: f32) -> Self {
+    pub fn new(position: f32, radius: f32, m_normal: Vec2, n_normal: Vec2, range: f32, path: &[Vec2]) -> Self {
+        let vert = -position.cos() * radius;
+        let horiz = position.sin() * radius;
+
         Self {
-            activation: Activation(activation),
-            ..default()
+            eye: Eye{},
+            view_params: ViewParams { 
+                m_normal: m_normal,
+                n_normal: n_normal, 
+                range: range, 
+            },
+            activation: Activation(0.),
+            spatial_bundle: SpatialBundle::from_transform(
+                Transform::from_rotation(Quat::from_rotation_z(position))
+                    .with_translation(Vec3::new(horiz, vert, 2.))
+            ),
+            collider: Collider::convex_polyline(Vec::from(path)).unwrap(),
         }
     }
 }
@@ -115,6 +133,13 @@ pub struct Flagellum;
 pub struct Eye;
 
 #[derive(Component, Default, Clone, Copy)]
+pub struct ViewParams {
+    pub m_normal: Vec2,
+    pub n_normal: Vec2,
+    pub range: f32,
+}
+
+#[derive(Component, Default, Clone, Copy)]
 pub struct Food;
 
 #[derive(Component, Deref, DerefMut, Default)]
@@ -125,6 +150,9 @@ pub struct CellEyes(pub Vec<Entity>);
 
 #[derive(Component, Deref, DerefMut)]
 pub struct CellCollider(pub Entity);
+
+#[derive(Component)]
+pub struct CellColliderTag;
 
 #[derive(Component, Deref, DerefMut)]
 pub struct CellSprites(pub Vec<Entity>);

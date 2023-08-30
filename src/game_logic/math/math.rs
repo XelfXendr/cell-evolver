@@ -1,6 +1,6 @@
 use std::f32::consts::E;
 
-use bevy::prelude::Vec2;
+use bevy::prelude::{Vec2, Quat};
 
 #[inline]
 pub fn sigmoid(x: f32) -> f32 {
@@ -15,6 +15,11 @@ pub fn sigmoid_inplace(x: &mut f32) {
 #[inline]
 pub fn tanh_inplace(x: &mut f32) {
     *x = f32::tanh(*x);
+}
+
+#[inline]
+pub fn quat_to_direction(quat: Quat) -> Vec2 {
+    Vec2::new(-2.*quat.z*quat.w, 1.-2.*quat.z*quat.z)
 }
 
 pub fn nearest_intersection(c: Vec2, r: f32, m: Vec2, n: Vec2) -> Option<Vec2> {
@@ -69,9 +74,9 @@ mod tests {
     fn approx_eq_some_vec(a: Option<Vec2>, b: Option<Vec2>) -> bool {
         println!("{:?} ? {:?}", a, b);
         match (a, b) {
-            (None, None) => true,
+            (None, None)       => true,
             (Some(a), Some(b)) => approx_eq_vec(a, b),
-            _ => false,
+            _                  => false,
         }
     }
 

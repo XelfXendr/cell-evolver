@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::game_logic::cell::*;
+use crate::game_logic::{cell::*, math::quat_to_direction};
 use super::*;
 
 const MASS_MULTIPLIER: f32 = 1./200.;
@@ -74,8 +74,4 @@ pub fn flagellum_physics(
             }
         }
     }
-}
-
-pub fn quat_to_direction(quat: Quat) -> Vec2 {
-    Vec2::new(-2.*quat.z*quat.w, 1.-2.*quat.z*quat.z)
 }
