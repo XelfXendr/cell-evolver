@@ -17,11 +17,8 @@ use crate::game_logic::sprites::*;
 
 use super::*;
 
-pub const PLAYER_SPEED: f32 = 500.;
-pub const PLAYER_ANGLE_SPEED: f32 = 7.;
-
-pub const SPLIT_ENERGY: f32 = 200.;
-pub const MIN_ENERGY: f32 = 70.;
+pub const SPLIT_ENERGY: f32 = 500.;
+pub const MIN_ENERGY: f32 = 50.;
 
 pub const FIXED_DELTA: f32 = 1./60.;
 
@@ -43,6 +40,7 @@ impl Plugin for CellCorePlugin {
                 count_cells,
                 dynamic_thing,
                 delayed_despawn,
+                update_radius,
             ))
             .add_systems(FixedUpdate, 
                 fixed_thing
@@ -59,11 +57,11 @@ impl Plugin for CellServerPlugin {
             ))
             .add_systems(FixedUpdate, (
                 food_spawning,
-                cell_food_intersection,
+                cell_food_intersection.before(update_radius),
                 eye_sensing,
                 cell_thinking,
                 update_flagellum.after(cell_thinking),
-                decrement_energy,
+                decrement_energy.before(update_radius),
                 split_cells,
             ));  
     }
@@ -138,31 +136,33 @@ pub fn cell_setup(
 
 pub fn cell_food_intersection(
     mut despawn_queue: ResMut<DelayedDespawnQueue>,
-    mut cell_query: Query<(&mut Energy, &Collider, &GlobalTransform), With<Cell>>,
+    mut cell_query: Query<(&mut Energy, &CellCollider), With<Cell>>,
+    collider_query: Query<(&Collider, &GlobalTransform)>,
     mut food_query: Query<&mut Dead, With<Food>>,
     rapier_context: Res<RapierContext>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
 ) {
-    for (mut energy, collider, transform) in cell_query.iter_mut() {
-        let direction = quat_to_direction(transform.to_scale_rotation_translation().1);
-        let angle = (-direction.x).atan2(direction.y);
-        let pos = transform.translation();
-        rapier_context.intersections_with_shape(
-            Vec2::new(pos.x, pos.y), 
-            angle, 
-            collider, 
-            QueryFilter::default(), 
-            |x| {
-                if let Ok(mut eaten) = food_query.get_mut(x) {
-                    if !**eaten {
-                        **eaten = true;
-                        despawn_food(&mut despawn_queue, &mut food_despawn_event_writer, x);
-                        **energy += 10.
+    for (mut energy, collider_entity) in cell_query.iter_mut() {
+        if let Ok((collider, transform)) = collider_query.get(**collider_entity) {
+            let direction = quat_to_direction(transform.to_scale_rotation_translation().1);
+            let angle = (-direction.x).atan2(direction.y);
+            rapier_context.intersections_with_shape(
+                transform.translation().truncate(), 
+                angle, 
+                collider, 
+                QueryFilter::default(), 
+                |x| {
+                    if let Ok(mut eaten) = food_query.get_mut(x) {
+                        if !**eaten {
+                            **eaten = true;
+                            despawn_food(&mut despawn_queue, &mut food_despawn_event_writer, x);
+                            **energy += 10.
+                        }
                     }
+                    true
                 }
-                true
-            }
-        )
+            )
+        }
     }
 }
 
@@ -261,7 +261,7 @@ pub fn split_cells(
     flagellum_sprite: Option<Res<FlagellumSprite>>,
     eye_sprite: Option<Res<EyeSprite>>,
 ) {
-    for (cell_entity, mut dead, _, weights, biases, state, flagella_params, eye_params, cell_transform) in cell_query.iter_mut().filter(|(_, dead, energy, _, _, _, _, _, _)| ***energy >= SPLIT_ENERGY && !***dead) {
+    for (cell_entity, mut dead, energy, weights, biases, state, flagella_params, eye_params, cell_transform) in cell_query.iter_mut().filter(|(_, dead, energy, _, _, _, _, _, _)| ***energy >= SPLIT_ENERGY && !***dead) {
         **dead = true;
 
         let position = cell_transform.translation;
@@ -277,7 +277,7 @@ pub fn split_cells(
             &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 
             rotation * Quat::from_rotation_z(0.1), 
-            100., 
+            **energy/2., 
             flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
             eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
@@ -292,7 +292,7 @@ pub fn split_cells(
             &mut cell_spawn_event_writer, &mut flagellum_spawn_event_writer, &mut eye_spawn_event_writer,
             position, 
             rotation * Quat::from_rotation_z(-0.1), 
-            100., 
+            **energy/2., 
             flagella_params.iter().map(|(pos, ang)| (pos + normal.sample(&mut rng), (ang + normal.sample(&mut rng)).clamp(-PI/2., PI/2.))).collect(),
             eye_params.iter().map(|pos| pos + normal.sample(&mut rng)).collect(),
             weights.map(|x| x + weight_normal.sample(&mut rng)),
@@ -303,6 +303,36 @@ pub fn split_cells(
             flagellum_sprite.as_deref(),
             eye_sprite.as_deref(),
         );
+    }
+}
+
+pub fn update_radius(
+    mut cell_query: Query<(&Energy, &mut Radius, &CellFlagella, &CellEyes, &CellCollider, &CellSprites), With<Cell>>,
+    mut transform_query: Query<&mut Transform>,
+) {
+    for (energy, mut radius, cell_flagella, cell_eyes, cell_collider, cell_sprites) in cell_query.iter_mut() {
+        let old_radius = radius.0;
+        radius.0 = 5. * energy.0.sqrt();
+        let ratio = radius.0 / old_radius;
+        
+        cell_flagella.iter().for_each(|e| {
+            if let Ok(mut t) = transform_query.get_mut(*e) {
+                t.translation *= ratio;
+            }
+        });
+        cell_eyes.iter().for_each(|e| {
+            if let Ok(mut t) = transform_query.get_mut(*e) {
+                t.translation *= ratio;
+            }
+        });
+        cell_sprites.iter().for_each(|e| {
+            if let Ok(mut t) = transform_query.get_mut(*e) {
+                t.scale *= ratio;
+            }
+        });
+        if let Ok(mut t) = transform_query.get_mut(**cell_collider) {
+            t.scale *= ratio;
+        }
     }
 }
 

@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::game_logic::{
     cell::{Energy, FlagellaParams, EyeParams}, 
-    physics::{quat_to_direction, Acceleration, AngularVelocity, AngularAcceleration, Velocity}
+    physics::{quat_to_direction, Force, AngularVelocity, AngularForce, Velocity}
 };
 
 #[derive(Serialize, Deserialize, Deref, DerefMut, Eq, PartialEq, Hash, Clone, Copy)]
@@ -35,14 +35,14 @@ impl ServerMessage {
         entity: Entity, 
         transform: &Transform, 
         velocity: Velocity, 
-        acceleration: Acceleration, 
+        force: Force, 
         ang_velocity: AngularVelocity, 
-        ang_acceleration: AngularAcceleration,
+        ang_force: AngularForce,
         energy: Energy) -> Self {
         Self::CellUpdate(
             Tick::new(tick),
             EntityId::new(entity),
-            CellState::new(transform, velocity, acceleration, ang_velocity, ang_acceleration, energy),
+            CellState::new(transform, velocity, force, ang_velocity, ang_force, energy),
         )
     }
     pub fn cell_spawn(entity: Entity, 
@@ -50,14 +50,14 @@ impl ServerMessage {
         eye_params: &EyeParams,
         transform: &Transform, 
         velocity: Velocity, 
-        acceleration: Acceleration, 
+        force: Force, 
         ang_velocity: AngularVelocity, 
-        ang_acceleration: AngularAcceleration,
+        ang_force: AngularForce,
         energy: Energy) -> Self {
         Self::CellSpawn(
             EntityId::new(entity),
             CellParams::new(flagella_params, eye_params),
-            CellState::new(transform, velocity, acceleration, ang_velocity, ang_acceleration, energy),
+            CellState::new(transform, velocity, force, ang_velocity, ang_force, energy),
         )
     }
     pub fn cell_despawn(entity: Entity) -> Self {
@@ -76,31 +76,31 @@ impl ServerMessage {
 pub struct CellState {
     pub position: Vec2,
     pub velocity: Vec2,
-    pub acceleration: Vec2,
+    pub force: Vec2,
     pub rotation: f32,
     pub angular_velocity: f32,
-    pub angular_acceleration: f32,
+    pub angular_force: f32,
     pub energy: f32,
 }
 impl CellState {
     pub fn new(
         transform: &Transform, 
         velocity: Velocity, 
-        acceleration: Acceleration, 
+        force: Force, 
         ang_velocity: AngularVelocity, 
-        ang_acceleration: AngularAcceleration,
+        ang_force: AngularForce,
         energy: Energy
     ) -> Self {
         Self {
             position: transform.translation.truncate(),
             velocity: *velocity,
-            acceleration: *acceleration,
+            force: *force,
             rotation: {
                 let direction = quat_to_direction(transform.rotation);
                 (-direction.x).atan2(direction.y)
             },
             angular_velocity: *ang_velocity,
-            angular_acceleration: *ang_acceleration,
+            angular_force: *ang_force,
             energy: *energy,
         }
     }

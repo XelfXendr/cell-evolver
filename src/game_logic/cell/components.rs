@@ -1,23 +1,35 @@
 use bevy::prelude::*;
 use ndarray::{Array2, Array1};
 
-#[derive(Bundle, Default)]
+use crate::game_logic::physics::PhysicsBundle;
+
+#[derive(Bundle)]
 pub struct CellBundle {
     pub cell: Cell,
     pub flagella: CellFlagella,
     pub eyes: CellEyes,
+    pub collider: CellCollider,
+    pub sprites: CellSprites,
     pub energy: Energy,
+    pub radius: Radius,
     pub dead: Dead,
     pub weights: NeuronWeights,
     pub biases: NeuronBiases,
     pub state: NeuronState,
     pub flagella_params: FlagellaParams,
     pub eye_params: EyeParams,
+    #[bundle()]
+    pub physics_bundle: PhysicsBundle,
+    #[bundle()]
+    pub spatial_bundle: SpatialBundle,
+    pub thinking_timer: ThinkingTimer,
 }
 impl CellBundle {
     pub fn new(
         flagella: Vec<Entity>,
         eyes: Vec<Entity>,
+        collider: Entity,
+        sprites: Vec<Entity>,
         flagella_params: Vec<(f32, f32)>,
         eye_params: Vec<f32>,
         energy: f32,
@@ -25,18 +37,29 @@ impl CellBundle {
         weights: Array2<f32>,
         biases: Array1<f32>,
         state: Array1<f32>,
+        position: Vec3,
+        rotation: Quat,
     ) -> Self {
         Self {
             cell: Cell{},
             flagella: CellFlagella(flagella),
             eyes: CellEyes(eyes),
+            collider: CellCollider(collider),
+            sprites: CellSprites(sprites),
             energy: Energy(energy),
+            radius: Radius(5. * energy.sqrt()),
             dead: Dead(dead),
             weights: NeuronWeights(weights),
             biases: NeuronBiases(biases),
             state: NeuronState(state),
             flagella_params: FlagellaParams(flagella_params),
             eye_params: EyeParams(eye_params),
+            physics_bundle: PhysicsBundle::new(),
+            spatial_bundle: SpatialBundle::from_transform(
+                Transform::from_translation(position)
+                    .with_rotation(rotation)
+            ),
+            thinking_timer: ThinkingTimer(Timer::from_seconds(1./20., TimerMode::Repeating)),
         }
     }
 }
@@ -100,6 +123,12 @@ pub struct CellFlagella(pub Vec<Entity>);
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct CellEyes(pub Vec<Entity>);
 
+#[derive(Component, Deref, DerefMut)]
+pub struct CellCollider(pub Entity);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct CellSprites(pub Vec<Entity>);
+
 #[derive(Component, Deref, DerefMut, Default, Clone, Copy)]
 pub struct Energy(pub f32);
 
@@ -127,5 +156,8 @@ pub struct Activation(pub f32);
 #[derive(Component, Deref, DerefMut, Default, Clone, Copy)]
 pub struct Angle(pub f32);
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Default)]
 pub struct ThinkingTimer(pub Timer);
+
+#[derive(Component, Deref, DerefMut, Default)]
+pub struct Radius(pub f32);

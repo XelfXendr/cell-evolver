@@ -10,7 +10,7 @@ use ndarray::{Array2, Array1};
 
 use crate::communication::shared::messages::{ServerMessage, EntityId, CellParams, CellState, Tick};
 use crate::game_logic::cell::{spawn_cell, CellSpawnEvent, FlagellumSpawnEvent, EyeSpawnEvent, CellDespawnEvent, despawn_cell, FoodSpawnEvent, spawn_food, FoodDespawnEvent, despawn_food, Cell, DelayedDespawnQueue, Energy};
-use crate::game_logic::physics::{Velocity, Acceleration, AngularVelocity, AngularAcceleration};
+use crate::game_logic::physics::{Velocity, Force, AngularVelocity, AngularForce};
 use crate::game_logic::sprites::*;
 
 pub struct ClientPlugin;
@@ -69,7 +69,13 @@ fn read_messages(
     mut eye_spawn_event_writer: EventWriter<EyeSpawnEvent>,
     mut food_spawn_event_writer: EventWriter<FoodSpawnEvent>,
     mut food_despawn_event_writer: EventWriter<FoodDespawnEvent>,
-    mut cell_query: Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>,
+    mut cell_query: Query<(
+        &mut LastTickUpdated, 
+        &mut Transform, 
+        &mut Velocity, &mut Force, 
+        &mut AngularVelocity, &mut AngularForce, 
+        &mut Energy
+    ), With<Cell>>,
     cell_sprite: Option<Res<CellSprite>>,
     light_sprite: Option<Res<LightSprite>>,
     flagellum_sprite: Option<Res<FlagellumSprite>>,
@@ -206,22 +212,22 @@ fn food_despawn_handler(
 
 fn cell_update_handler(
     entity_map: &EntityMap,
-    cell_query: &mut Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Acceleration, &mut AngularVelocity, &mut AngularAcceleration, &mut Energy), With<Cell>>,
+    cell_query: &mut Query<(&mut LastTickUpdated, &mut Transform, &mut Velocity, &mut Force, &mut AngularVelocity, &mut AngularForce, &mut Energy), With<Cell>>,
     tick: Tick,
     entity: EntityId,
     cell_state: &CellState,
 ) {
-    if let Some((mut last_tick, mut transform, mut velocity, mut acceleration, mut angular_velocity, mut angular_acceleration, mut energy)) = entity_map.get(&entity).and_then(|e| cell_query.get_mut(*e).ok()) {
+    if let Some((mut last_tick, mut transform, mut velocity, mut force, mut angular_velocity, mut angular_force, mut energy)) = entity_map.get(&entity).and_then(|e| cell_query.get_mut(*e).ok()) {
         if *tick <= **last_tick {
             return;
         }
 
         transform.translation = cell_state.position.extend(0.);
         **velocity = cell_state.velocity;
-        **acceleration = cell_state.acceleration;
+        **force = cell_state.force;
         transform.rotation = Quat::from_rotation_z(cell_state.rotation);
         **angular_velocity = cell_state.angular_velocity;
-        **angular_acceleration = cell_state.angular_acceleration;
+        **angular_force = cell_state.angular_force;
         **energy = cell_state.energy;
         **last_tick = *tick;
     }

@@ -3,7 +3,7 @@ use bevy_prototype_lyon::prelude::*;
 use bevy_rapier2d::prelude::*;
 use ndarray::{Array2, Array1};
 
-use crate::game_logic::{physics::*, sprites::*};
+use crate::game_logic::sprites::*;
 use super::*;
 
 pub fn spawn_cell(
@@ -24,57 +24,64 @@ pub fn spawn_cell(
     flagellum_sprite: Option<&FlagellumSprite>,
     eye_sprite: Option<&EyeSprite>,
 ) -> Entity {
+    let radius = 5. * energy.sqrt();
+
     let flagella: Vec<Entity> = flagella_params.iter().map(
-        |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang, flagellum_sprite)
+        |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang, radius, flagellum_sprite)
     ).collect();
     let eyes: Vec<Entity> = eye_params.iter().map(
-        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, eye_sprite)
+        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, radius, eye_sprite)
     ).collect(); 
-
-    let cell = commands.spawn((
-        CellBundle::new( 
-            flagella.clone(),
-            eyes.clone(),
-            flagella_params,
-            eye_params,
-            energy, false,
-            weights, biases, state,
-        ),
-        PhysicsBundle::from_drag(2., 2.),
-        SpatialBundle::from_transform(
-            Transform::from_translation(position)
-                .with_rotation(rotation)
-        ),
-        Collider::ball(50.),
-        ThinkingTimer(Timer::from_seconds(1./20., TimerMode::Repeating)),
-    )).with_children(|c| {
+    let collider = commands.spawn((
+        SpatialBundle::default(),
+        Collider::ball(radius),
+    )).id();
+    let sprites = {
+        let mut vec: Vec<Entity> = Vec::new();
         if let Some(sprite) = cell_sprite {
-            c.spawn(SpriteBundle {
+            vec.push(commands.spawn(SpriteBundle {
                 texture: sprite.0.clone(),
                 sprite: Sprite{
-                    custom_size: Some(Vec2::new(100., 100.)),
+                    custom_size: Some(Vec2::new(radius*2., radius*2.)),
                     color: Color::hex("8db5fb").unwrap(),
                     ..default()
                 },
                 ..default()
-            });
+            }).id());
         }
         if let Some(sprite) = light_sprite {
-            c.spawn(SpriteBundle {
+            vec.push(commands.spawn(SpriteBundle {
                 texture: sprite.0.clone(),
                 sprite: Sprite {
-                    custom_size: Some(Vec2::new(1000.,1000.)),
+                    custom_size: Some(Vec2::new(radius*20.,radius*20.)),
                     color: Color::rgba_u8(100,200,255,50),
                     ..default()
                 },
                 transform: Transform::from_translation(Vec3::new(0.,0.,-100.)),
                 ..default()
-            });
+            }).id());
         }
-    }).id();
+        vec
+    };
+
+    let cell = commands.spawn((
+        CellBundle::new( 
+            flagella.clone(),
+            eyes.clone(),
+            collider,
+            sprites.clone(),
+            flagella_params,
+            eye_params,
+            energy, false,
+            weights, biases, state,
+            position, rotation,
+        ),
+    )).id();
 
     commands.entity(cell).push_children(&flagella);
     commands.entity(cell).push_children(&eyes);
+    commands.entity(cell).push_children(&[collider]);
+    commands.entity(cell).push_children(&sprites);
     cell_spawn_event_writer.send(CellSpawnEvent(cell));
     cell
 }
@@ -84,10 +91,11 @@ pub fn spawn_flagellum(
     flagellum_spawn_event_writer: &mut EventWriter<FlagellumSpawnEvent>,
     position: f32,
     angle: f32,
+    radius: f32,
     flagellum_sprite: Option<&FlagellumSprite>,
 ) -> Entity{
-    let vert = -position.cos() * 50.;
-    let horiz = position.sin() * 50.;
+    let vert = -position.cos() * radius;
+    let horiz = position.sin() * radius;
 
     let flagellum = commands.spawn((
         FlagellumBundle::new(0., angle),
@@ -123,10 +131,11 @@ pub fn spawn_eye(
     commands: & mut Commands,
     eye_spawn_event_writer: &mut EventWriter<EyeSpawnEvent>,
     position: f32,
+    radius: f32,
     eye_sprite: Option<&EyeSprite>,
 ) -> Entity{
-    let vert = -position.cos() * 50.;
-    let horiz = position.sin() * 50.;
+    let vert = -position.cos() * radius;
+    let horiz = position.sin() * radius;
     
     let eye = commands.spawn((
         EyeBundle::new(0.),

@@ -57,16 +57,10 @@ fn line_intersection(c: Vec2, r: f32, v: Vec2, sign: f32) -> Option<Vec2>{
 
 #[cfg(test)]
 mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
     const EPSILON: f32 = 0.0001;
-    fn approx_eq<T: 
-        std::ops::Add<f32> + 
-        std::ops::Sub<f32> + 
-        std::cmp::PartialOrd<<T as std::ops::Add<f32>>::Output> + 
-        std::cmp::PartialOrd<<T as std::ops::Sub<f32>>::Output> +
-        Copy>(a:T, b:T) -> bool {
+    fn approx_eq(a: f32, b: f32) -> bool {
         a >= b - EPSILON && a <= b + EPSILON
     }
     fn approx_eq_vec(a: Vec2, b: Vec2) -> bool {
