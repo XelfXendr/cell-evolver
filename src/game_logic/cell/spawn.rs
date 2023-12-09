@@ -14,6 +14,8 @@ pub fn spawn_cell(
     position: Vec3,
     rotation: Quat,
     energy: f32,
+    split_energy: f32,
+    chloroplasts: u8,
     flagella_params: Vec<(f32, f32)>,
     eye_params: Vec<f32>,
     weights: Array2<f32>,
@@ -23,14 +25,20 @@ pub fn spawn_cell(
     light_sprite: Option<&LightSprite>,
     flagellum_sprite: Option<&FlagellumSprite>,
     eye_sprite: Option<&EyeSprite>,
+    cell_count: &mut CellCount,
 ) -> Entity {
+    **cell_count += 1;
+
     let radius = 5. * energy.sqrt();
+
+    let fov = f32::to_radians(30.);
+    let range = 1000.;
 
     let flagella: Vec<Entity> = flagella_params.iter().map(
         |(pos, ang)| spawn_flagellum(commands, flagellum_spawn_event_writer, *pos, *ang, radius, flagellum_sprite)
     ).collect();
     let eyes: Vec<Entity> = eye_params.iter().map(
-        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, radius, eye_sprite)
+        |pos| spawn_eye(commands, eye_spawn_event_writer, *pos, radius, fov, range, eye_sprite)
     ).collect(); 
     let collider = commands.spawn((
         CellColliderTag,
@@ -73,7 +81,7 @@ pub fn spawn_cell(
             sprites.clone(),
             flagella_params,
             eye_params,
-            energy, false,
+            energy, split_energy, chloroplasts,
             weights, biases, state,
             position, rotation,
         ),
@@ -133,11 +141,10 @@ pub fn spawn_eye(
     eye_spawn_event_writer: &mut EventWriter<EyeSpawnEvent>,
     position: f32,
     radius: f32,
+    fov: f32,
+    range: f32,
     eye_sprite: Option<&EyeSprite>,
 ) -> Entity{    
-    let fov = f32::to_radians(35.);
-    let range = 1000.;
-
     let cos = f32::cos(fov/2.);
     let sin = f32::sin(fov/2.);
 
@@ -181,7 +188,7 @@ pub fn spawn_eye(
                         path_builder.close();
                         path_builder.build()
                     },
-                    transform: Transform::from_xyz(0., 0., -1.),
+                    spatial: SpatialBundle::from_transform(Transform::from_xyz(0., 0., -1.)),
                     ..default()
                 },
                 Fill::color(Color::rgba_u8(255, 255, 255, 10)),
@@ -197,8 +204,10 @@ pub fn spawn_eye(
 pub fn despawn_cell(
     despawn_queue: &mut DelayedDespawnQueue,
     cell_despawn_event_writer: &mut EventWriter<CellDespawnEvent>,
-    cell_entity: Entity
+    cell_entity: Entity,
+    cell_count: &mut CellCount,
 ) {
+    **cell_count -= 1;
     despawn_queue.add(cell_entity);
     cell_despawn_event_writer.send(CellDespawnEvent(cell_entity));
 }

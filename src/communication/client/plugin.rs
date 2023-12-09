@@ -152,6 +152,8 @@ fn cell_spawn_handler(
             cell_state.position.extend(0.),
             Quat::from_rotation_z(cell_state.rotation),
             cell_state.energy,
+            todo!(),
+            todo!(),
             cell_params.flagella_params,
             cell_params.eye_params,
             Array2::default((0,0)),

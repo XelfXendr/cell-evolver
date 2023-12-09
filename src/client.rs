@@ -1,8 +1,8 @@
 mod game_logic;
 mod communication;
 
-use bevy::render::render_resource::FilterMode;
-use bevy::render::render_resource::SamplerDescriptor;
+use bevy::render::texture::ImageFilterMode;
+use bevy::render::texture::ImageSamplerDescriptor;
 use communication::client::ClientPlugin;
 use game_logic::camera_controll::*;
 use game_logic::sprites::*;
@@ -23,9 +23,9 @@ fn main() {
                 }),
                 ..default()
             }).set(ImagePlugin {
-                default_sampler: SamplerDescriptor {
-                    mag_filter: FilterMode::Nearest,
-                    min_filter: FilterMode::Nearest,
+                default_sampler: ImageSamplerDescriptor {
+                    mag_filter: ImageFilterMode::Nearest,
+                    min_filter: ImageFilterMode::Nearest,
                     ..default()
                 },
             }),

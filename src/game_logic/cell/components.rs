@@ -12,8 +12,10 @@ pub struct CellBundle {
     pub collider: CellCollider,
     pub sprites: CellSprites,
     pub energy: Energy,
+    pub split_energy: SplitEnergy,
     pub radius: Radius,
     pub dead: Dead,
+    pub chloroplasts: Chloroplasts,
     pub weights: NeuronWeights,
     pub biases: NeuronBiases,
     pub state: NeuronState,
@@ -34,7 +36,8 @@ impl CellBundle {
         flagella_params: Vec<(f32, f32)>,
         eye_params: Vec<f32>,
         energy: f32,
-        dead: bool,
+        split_energy: f32,
+        chloroplasts: u8,        
         weights: Array2<f32>,
         biases: Array1<f32>,
         state: Array1<f32>,
@@ -48,8 +51,10 @@ impl CellBundle {
             collider: CellCollider(collider),
             sprites: CellSprites(sprites),
             energy: Energy(energy),
+            split_energy: SplitEnergy(split_energy),
             radius: Radius(5. * energy.sqrt()),
-            dead: Dead(dead),
+            dead: Dead(false),
+            chloroplasts: Chloroplasts(chloroplasts),
             weights: NeuronWeights(weights),
             biases: NeuronBiases(biases),
             state: NeuronState(state),
@@ -161,6 +166,9 @@ pub struct CellSprites(pub Vec<Entity>);
 pub struct Energy(pub f32);
 
 #[derive(Component, Deref, DerefMut, Default, Clone, Copy)]
+pub struct SplitEnergy(pub f32);
+
+#[derive(Component, Deref, DerefMut, Default, Clone, Copy)]
 pub struct Dead(pub bool);
 
 #[derive(Component, Deref, DerefMut, Default)]
@@ -171,6 +179,9 @@ pub struct NeuronBiases(pub Array1<f32>);
 
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct NeuronState(pub Array1<f32>);
+
+#[derive(Component, Deref, DerefMut, Default)]
+pub struct Chloroplasts(pub u8);
 
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct FlagellaParams(pub Vec<(f32,f32)>);
